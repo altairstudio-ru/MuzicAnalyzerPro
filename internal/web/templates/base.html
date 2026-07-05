@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suno Archiver</title>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { font-size: 16px; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            min-height: 100vh;
+        }
+        .layout { display: flex; min-height: 100vh; }
+        .sidebar {
+            width: 240px;
+            background: #161b22;
+            border-right: 1px solid #30363d;
+            padding: 20px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .sidebar h1 { font-size: 18px; margin-bottom: 20px; color: #58a6ff; }
+        .sidebar .stat-block { font-size: 14px; color: #8b949e; margin-bottom: 20px; }
+        .sidebar .stat-block div { margin: 4px 0; }
+        .sidebar .stat-block strong { color: #c9d1d9; }
+        .sidebar .nav-group { margin-bottom: 20px; }
+        .sidebar .nav-group .nav-title {
+            font-size: 11px; text-transform: uppercase; color: #8b949e;
+            margin-bottom: 6px; letter-spacing: 0.5px;
+        }
+        .sidebar .nav-item {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 5px 8px; color: #c9d1d9; text-decoration: none;
+            border-radius: 6px; font-size: 13px; margin: 1px 0;
+        }
+        .sidebar .nav-item:hover { background: #1c2128; color: #58a6ff; }
+        .sidebar .sync-area { margin-top: auto; padding-top: 16px; }
+
+        .content { flex: 1; padding: 24px; min-width: 0; }
+        .content h2 { font-size: 20px; margin-bottom: 16px; }
+
+        .toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+        .toolbar input[type=search] {
+            padding: 8px 12px; background: #0d1117; border: 1px solid #30363d;
+            border-radius: 6px; color: #c9d1d9; font-size: 14px; min-width: 250px;
+        }
+        .toolbar input[type=search]:focus { outline: none; border-color: #58a6ff; }
+
+        .btn {
+            padding: 8px 16px; border: 1px solid #30363d; border-radius: 6px;
+            cursor: pointer; font-size: 14px; background: #21262d; color: #c9d1d9;
+            display: inline-flex; align-items: center; gap: 6px;
+        }
+        .btn:hover { background: #30363d; }
+        .btn-primary { background: #238636; border-color: #2ea043; color: #fff; }
+        .btn-primary:hover { background: #2ea043; }
+
+        .tag-list { display: flex; flex-wrap: wrap; gap: 4px; }
+        .tag {
+            display: inline-block; padding: 2px 8px; background: #1f6feb22;
+            color: #58a6ff; border-radius: 12px; font-size: 11px;
+        }
+        .badge-ws {
+            display: inline-block; padding: 2px 6px; background: #30363d44;
+            color: #8b949e; border-radius: 4px; font-size: 11px;
+        }
+        .badge-dl { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+        .badge-dl.yes { background: #23863633; color: #3fb950; }
+        .badge-dl.no { background: #da363333; color: #f85149; }
+
+        .track-item {
+            background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+            padding: 14px 16px; margin-bottom: 8px;
+        }
+        .track-item:hover { border-color: #58a6ff55; }
+        .track-item .title { font-size: 15px; font-weight: 600; margin-bottom: 2px; }
+        .track-item .title a { color: #e6edf3; text-decoration: none; }
+        .track-item .title a:hover { color: #58a6ff; }
+        .track-item .artist { font-size: 13px; color: #8b949e; margin-bottom: 6px; }
+        .track-item .meta { font-size: 12px; color: #8b949e; display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+        .track-item .player { margin-top: 8px; }
+        .track-item .player audio { width: 100%; height: 36px; }
+
+        .filters { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
+        .filter-chip {
+            padding: 3px 10px; background: #21262d; border: 1px solid #30363d;
+            border-radius: 14px; font-size: 12px; cursor: pointer; color: #c9d1d9;
+            text-decoration: none;
+        }
+        .filter-chip:hover { background: #30363d; }
+        .filter-chip.active { background: #1f6feb33; border-color: #58a6ff; color: #58a6ff; }
+
+        .detail-card {
+            background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+            padding: 24px; max-width: 720px;
+        }
+        .detail-card h1 { font-size: 22px; margin-bottom: 4px; }
+        .detail-card .sub { color: #8b949e; margin-bottom: 20px; }
+        .detail-card .section { margin-bottom: 20px; }
+        .detail-card .section h3 { font-size: 12px; color: #8b949e; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px; }
+        .detail-card .section p { font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+        .detail-card .player { margin: 16px 0; }
+        .detail-card .player audio { width: 100%; }
+
+        .empty-state { text-align: center; padding: 60px 20px; color: #8b949e; }
+        .empty-state h2 { margin-bottom: 8px; color: #c9d1d9; }
+
+        .htmx-indicator { opacity: 0; transition: opacity 0.2s; }
+        .htmx-request .htmx-indicator { opacity: 1; }
+        .htmx-request.htmx-indicator { opacity: 1; }
+    </style>
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <h1>🎵 Suno Archiver</h1>
+        <div class="stat-block">
+            <div>Треков: <strong>{{.TrackCount}}</strong></div>
+            <div>Скачано: <strong>{{.DLCount}}</strong></div>
+        </div>
+        <div class="nav-group">
+            <div class="nav-title">Библиотека</div>
+            <a href="/" class="nav-item">Все треки</a>
+        </div>
+        {{if .Workspaces}}
+        <div class="nav-group">
+            <div class="nav-title">Workspaces</div>
+            {{range .Workspaces}}
+            <a href="/?workspace={{.Name}}" class="nav-item"><span>{{.Name}}</span> <span>{{.TrackCount}}</span></a>
+            {{end}}
+        </div>
+        {{end}}
+        <div class="sync-area">
+            <button class="btn btn-primary" hx-post="/sync" hx-swap="none">
+                🔄 Синхронизировать
+            </button>
+        </div>
+    </aside>
+    <main class="content" id="main-content">
+        {{block "content" .}}{{end}}
+    </main>
+</div>
+</body>
+</html>
