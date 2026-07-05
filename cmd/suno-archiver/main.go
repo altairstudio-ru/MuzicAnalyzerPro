@@ -29,7 +29,7 @@ and provides a web UI for browsing, searching, and organizing them.`,
 		Long: `Save your Suno Clerk JWT auth token.
 
 To get the token:
-1. Open suno.ai in your browser
+1. Open suno.com in your browser
 2. Open DevTools (F12) → Application → Local Storage
 3. Find the Clerk session token (starts with "ey...")
 4. Copy it and run: suno-archiver auth <token>`,

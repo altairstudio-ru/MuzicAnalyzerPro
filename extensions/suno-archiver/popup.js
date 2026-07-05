@@ -118,9 +118,9 @@ checkLocalApp().then((appRunning) => {
   // Step 2: app is running — look for Suno tab
   guidanceEl.style.display = 'none';
 
-  chrome.tabs.query({ url: 'https://suno.ai/*' }, (tabs) => {
+  chrome.tabs.query({ url: 'https://suno.com/*' }, (tabs) => {
     if (!tabs || tabs.length === 0) {
-      setStatus('unknown', 'Откройте suno.ai в браузере и войдите');
+      setStatus('unknown', 'Откройте suno.com в браузере и войдите');
       hideToken();
       return;
     }
@@ -129,7 +129,7 @@ checkLocalApp().then((appRunning) => {
 
     chrome.tabs.sendMessage(tab.id, { action: 'getToken' }, (response) => {
       if (chrome.runtime.lastError) {
-        setStatus('disconnected', 'Перезагрузите страницу suno.ai');
+        setStatus('disconnected', 'Перезагрузите страницу suno.com');
         hideToken();
         return;
       }

@@ -1,4 +1,4 @@
-// Content script — runs on suno.ai
+// Content script — runs on suno.com
 // Reads Clerk JWT from localStorage and sends to the extension popup or auto-sends.
 
 const HEALTH_URL = 'http://localhost:8080/api/health';

@@ -11,14 +11,14 @@
   ],
 
   "host_permissions": [
-    "https://suno.ai/*",
+    "https://suno.com/*",
     "http://localhost:8080/*",
     "http://127.0.0.1:8080/*"
   ],
 
   "content_scripts": [
     {
-      "matches": ["https://suno.ai/*"],
+      "matches": ["https://suno.com/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
