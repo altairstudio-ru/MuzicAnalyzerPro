@@ -61,6 +61,7 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 	s.Router.Get("/audio/{id}", s.serveAudio)
 	s.Router.Post("/api/auth", s.authHandler)
 	s.Router.Options("/api/auth", s.authCORS)
+	s.Router.Get("/api/health", s.healthHandler)
 
 	return s, nil
 }
@@ -151,6 +152,13 @@ func (s *Server) serveAudio(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Accept-Ranges", "bytes")
 	http.ServeFile(w, r, track.AudioPath)
+}
+
+// healthHandler returns 200 — used by the extension to check if the app is running.
+func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 // authHandler receives a Clerk JWT from the browser extension.

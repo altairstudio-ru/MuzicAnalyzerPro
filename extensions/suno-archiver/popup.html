@@ -116,6 +116,32 @@
             margin-top: 4px;
             padding-left: 24px;
         }
+        .guidance {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 8px 0;
+        }
+        .guidance-title {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .guidance-cmd {
+            font-family: monospace;
+            font-size: 12px;
+            background: #0d1117;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin: 3px 0;
+            color: #58a6ff;
+        }
+        .guidance-hint {
+            color: #8b949e;
+            font-size: 11px;
+            margin-top: 6px;
+        }
         .footer {
             border-top: 1px solid #30363d;
             padding-top: 10px;
@@ -142,7 +168,7 @@
     <h1>🎵 Suno Archiver</h1>
 
     <div id="status-bar" class="status unknown">
-        <span class="dot gray"></span>
+        <span id="status-dot" class="dot gray"></span>
         <span id="status-text">Проверка...</span>
     </div>
 
@@ -164,6 +190,16 @@
     <div class="footer">
         <span id="app-status">Приложение: ✗</span>
         <span id="token-source">Источник: —</span>
+    </div>
+
+    <div id="guidance" class="guidance" style="display:none;">
+        <div class="guidance-title">🚀 Чтобы запустить:</div>
+        <div class="guidance-cmd">cd ~/MuzicAnalyzerPro</div>
+        <div class="guidance-cmd">./bin/suno-archiver serve</div>
+        <div class="guidance-hint">или просто <strong>suno-archiver serve</strong> если добавили в PATH</div>
+        <div style="margin-top:8px; border-top:1px solid #30363d; padding-top:8px;">
+            <a href="#" id="launch-link" style="color:#58a6ff; font-size:13px;">Запустить из расширения (если нужны права)</a>
+        </div>
     </div>
 
     <script src="popup.js"></script>
