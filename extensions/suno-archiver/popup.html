@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suno Archiver</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            width: 340px;
+            padding: 16px;
+            font-size: 14px;
+        }
+        h1 {
+            font-size: 16px;
+            color: #58a6ff;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .status {
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .status.connected {
+            background: #23863622;
+            border: 1px solid #2ea04344;
+            color: #3fb950;
+        }
+        .status.disconnected {
+            background: #da363322;
+            border: 1px solid #f8514944;
+            color: #f85149;
+        }
+        .status.unknown {
+            background: #30363d33;
+            border: 1px solid #30363d;
+            color: #8b949e;
+        }
+        .token-info {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 12px;
+            word-break: break-all;
+            font-size: 12px;
+            color: #8b949e;
+        }
+        .token-info .label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #8b949e;
+            margin-bottom: 4px;
+        }
+        .token-info .value {
+            color: #c9d1d9;
+            font-family: monospace;
+            font-size: 11px;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px 16px;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            background: #21262d;
+            color: #c9d1d9;
+            margin-bottom: 12px;
+            transition: background 0.15s;
+        }
+        button:hover { background: #30363d; }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        button.primary {
+            background: #238636;
+            border-color: #2ea043;
+        }
+        button.primary:hover { background: #2ea043; }
+        button.primary:disabled { background: #23863655; }
+
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 0;
+            cursor: pointer;
+        }
+        .checkbox-row input[type=checkbox] {
+            width: 16px;
+            height: 16px;
+            accent-color: #238636;
+            cursor: pointer;
+        }
+        .checkbox-row label {
+            cursor: pointer;
+            color: #c9d1d9;
+            font-size: 13px;
+        }
+        .hint {
+            color: #8b949e;
+            font-size: 11px;
+            margin-top: 4px;
+            padding-left: 24px;
+        }
+        .footer {
+            border-top: 1px solid #30363d;
+            padding-top: 10px;
+            margin-top: 8px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #8b949e;
+        }
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+        .dot.green { background: #3fb950; }
+        .dot.red { background: #f85149; }
+        .dot.gray { background: #8b949e; }
+        .dot.yellow { background: #d29922; }
+    </style>
+</head>
+<body>
+    <h1>🎵 Suno Archiver</h1>
+
+    <div id="status-bar" class="status unknown">
+        <span class="dot gray"></span>
+        <span id="status-text">Проверка...</span>
+    </div>
+
+    <div id="token-section" class="token-info" style="display:none;">
+        <div class="label">Токен найден</div>
+        <div class="value" id="token-display"></div>
+    </div>
+
+    <button id="send-btn" class="primary" disabled>
+        📤 Отправить токен
+    </button>
+
+    <div class="checkbox-row" id="auto-toggle">
+        <input type="checkbox" id="auto-send">
+        <label for="auto-send">Автоматически отправлять токен при входе на suno.ai</label>
+    </div>
+    <div class="hint">Если включено — токен передаётся фоново без лишних нажатий</div>
+
+    <div class="footer">
+        <span id="app-status">Приложение: ✗</span>
+        <span id="token-source">Источник: —</span>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

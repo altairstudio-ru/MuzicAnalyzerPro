@@ -3,6 +3,7 @@ package web
 import (
 	"database/sql"
 	"embed"
+	"encoding/json"
 	"html/template"
 	"log"
 	"net/http"
@@ -58,6 +59,8 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 	s.Router.Get("/tracks/{id}", s.trackDetail)
 	s.Router.Post("/sync", s.triggerSync)
 	s.Router.Get("/audio/{id}", s.serveAudio)
+	s.Router.Post("/api/auth", s.authHandler)
+	s.Router.Options("/api/auth", s.authCORS)
 
 	return s, nil
 }
@@ -148,6 +151,48 @@ func (s *Server) serveAudio(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Accept-Ranges", "bytes")
 	http.ServeFile(w, r, track.AudioPath)
+}
+
+// authHandler receives a Clerk JWT from the browser extension.
+type authRequest struct {
+	Token string `json:"token"`
+}
+
+func (s *Server) authHandler(w http.ResponseWriter, r *http.Request) {
+	var req authRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.Token == "" {
+		http.Error(w, "token is required", http.StatusBadRequest)
+		return
+	}
+
+	// Save token to config
+	cfg := s.Manager.Config
+	cfg.Suno.AuthToken = req.Token
+	if err := library.SaveConfig(cfg); err != nil {
+		log.Printf("Save config error: %v", err)
+		http.Error(w, "failed to save token", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Auth token received and saved from extension")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "ok",
+		"message": "✓ Auth token saved. Run 'suno-archiver sync' to start downloading.",
+	})
+}
+
+// authCORS handles preflight OPTIONS requests from the extension.
+func (s *Server) authCORS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "chrome-extension://*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // render executes a template with the given data.

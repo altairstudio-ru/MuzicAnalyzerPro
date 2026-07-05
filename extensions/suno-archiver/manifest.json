@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Suno Archiver",
+  "version": "1.0.0",
+  "description": "Передаёт токен Suno в локальное приложение Suno Archiver для синхронизации треков.",
+  "author": "MuzicAnalyzerPro",
+  "homepage_url": "https://github.com/altairstudio-ru/MuzicAnalyzerPro",
+
+  "permissions": [
+    "storage"
+  ],
+
+  "host_permissions": [
+    "https://suno.ai/*",
+    "http://localhost:8080/*",
+    "http://127.0.0.1:8080/*"
+  ],
+
+  "content_scripts": [
+    {
+      "matches": ["https://suno.ai/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Suno Archiver"
+  }
+}
