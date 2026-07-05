@@ -1,8 +1,10 @@
 // Content script — runs on suno.ai
 // Reads Clerk JWT from localStorage and sends to the extension popup or auto-sends.
 
-const LOCAL_AUTH_URL = 'http://localhost:8080/api/auth';
+const HEALTH_URL = 'http://localhost:8080/api/health';
+const AUTH_URL = 'http://localhost:8080/api/auth';
 const STORAGE_KEY_AUTO = 'suno-archiver:auto-send';
+const MAX_RETRY_SEC = 60; // retry sending for up to 60 seconds after initial failure
 
 // Known Clerk localStorage keys that may contain the JWT session token.
 const CLERK_KEYS = [
@@ -21,7 +23,6 @@ function findClerkJWT() {
         return { key, token: val };
       }
     } catch {
-      // localStorage access may be blocked in some contexts
       continue;
     }
   }
@@ -45,44 +46,79 @@ function findClerkJWT() {
   return null;
 }
 
+// Check if the local app is running.
+async function isAppRunning() {
+  try {
+    const resp = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(3000) });
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
 // Send token to the local app.
 async function sendToken(token) {
   try {
-    const resp = await fetch(LOCAL_AUTH_URL, {
+    const resp = await fetch(AUTH_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token }),
+      signal: AbortSignal.timeout(5000),
     });
     if (resp.ok) {
-      console.log('[Suno Archiver] Token sent successfully');
+      console.log('[Suno Archiver] ✓ Token sent successfully');
       return true;
     } else {
-      const text = await resp.text();
-      console.warn('[Suno Archiver] Token send failed:', resp.status, text);
+      console.warn('[Suno Archiver] Token send failed:', resp.status);
       return false;
     }
   } catch (err) {
-    // Connection refused — app not running, that's okay
     console.log('[Suno Archiver] Local app not reachable:', err.message);
     return false;
   }
 }
 
-// Main logic: check if auto-send is enabled, and send if so.
+// Try to send token, retrying if the app is offline.
 async function tryAutoSend() {
   const result = findClerkJWT();
   if (!result) {
     console.log('[Suno Archiver] No Clerk JWT found on page');
     return;
   }
+  console.log('[Suno Archiver] Found Clerk JWT (key:', result.key, ')');
 
-  chrome.storage.sync.get([STORAGE_KEY_AUTO], async (data) => {
-    const autoSend = data[STORAGE_KEY_AUTO];
-    if (autoSend === true || autoSend === undefined) {
-      // Default: enabled
-      await sendToken(result.token);
+  // Get auto-send preference
+  const data = await chrome.storage.sync.get([STORAGE_KEY_AUTO]);
+  const autoSend = data[STORAGE_KEY_AUTO];
+  if (autoSend === false) {
+    console.log('[Suno Archiver] Auto-send disabled in settings');
+    return;
+  }
+
+  // Try immediately
+  const ok = await sendToken(result.token);
+  if (ok) return;
+
+  // First attempt failed (app likely offline) — retry in background
+  console.log('[Suno Archiver] App offline, will retry for ' + MAX_RETRY_SEC + 's...');
+  const startTime = Date.now();
+  const retryInterval = setInterval(async () => {
+    const elapsed = (Date.now() - startTime) / 1000;
+    if (elapsed > MAX_RETRY_SEC) {
+      clearInterval(retryInterval);
+      console.log('[Suno Archiver] Retry timeout — token not sent');
+      return;
     }
-  });
+
+    const running = await isAppRunning();
+    if (!running) return; // still offline, keep retrying
+
+    const ok = await sendToken(result.token);
+    if (ok) {
+      clearInterval(retryInterval);
+      console.log('[Suno Archiver] Token sent on retry (app came online)');
+    }
+  }, 5000); // check every 5 seconds
 }
 
 // Run on page load
@@ -93,7 +129,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'getToken') {
     const result = findClerkJWT();
     sendResponse(result);
-    return true; // keep channel open for async response
+    return true;
   }
 
   if (request.action === 'sendToken') {

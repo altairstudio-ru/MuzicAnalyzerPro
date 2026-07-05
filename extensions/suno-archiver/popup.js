@@ -1,7 +1,7 @@
 // Popup script — manages token display, auto-send toggle, and manual send.
 
 const BASE_URL = 'http://localhost:8080';
-const AUTH_URL = BASE_URL + '/api/auth';
+const AUTH_URL = 'http://localhost:8080/api/auth';
 const HEALTH_URL = BASE_URL + '/api/health';
 const STORAGE_KEY_AUTO = 'suno-archiver:auto-send';
 
@@ -19,6 +19,7 @@ const guidanceEl = document.getElementById('guidance');
 
 let currentToken = null;
 let tokenKey = null;
+let tokenSent = false;
 
 // —— Helpers ——
 
@@ -26,7 +27,11 @@ function setStatus(className, text) {
   statusBar.className = 'status ' + className;
   statusText.textContent = text;
   if (statusDot) {
-    statusDot.className = 'dot ' + (className === 'connected' ? 'green' : className === 'disconnected' ? 'red' : className === 'warning' ? 'yellow' : 'gray');
+    statusDot.className = 'dot ' + (
+      className === 'connected' ? 'green' :
+      className === 'disconnected' ? 'red' :
+      className === 'warning' ? 'yellow' : 'gray'
+    );
   }
 }
 
@@ -49,7 +54,7 @@ function hideToken() {
 
 async function checkLocalApp() {
   try {
-    const resp = await fetch(HEALTH_URL);
+    const resp = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(2000) });
     if (resp.ok) {
       appStatusEl.textContent = 'Приложение: ✓ запущено';
       guidanceEl.style.display = 'none';
@@ -60,6 +65,7 @@ async function checkLocalApp() {
     }
   } catch {
     appStatusEl.textContent = 'Приложение: ✗ не запущено';
+    guidanceEl.style.display = 'block';
     return false;
   }
 }
@@ -72,10 +78,12 @@ async function sendToken(token) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token }),
+      signal: AbortSignal.timeout(5000),
     });
     if (resp.ok) {
       const data = await resp.json().catch(() => ({}));
       setStatus('connected', data.message || '✓ Токен отправлен!');
+      tokenSent = true;
       return true;
     } else {
       const text = await resp.text();
@@ -99,21 +107,20 @@ chrome.storage.sync.get([STORAGE_KEY_AUTO], (data) => {
   autoCheckbox.checked = autoSend !== false; // default true
 });
 
-// First: check if the app is running
+// Step 1: check if the app is running
 checkLocalApp().then((appRunning) => {
   if (!appRunning) {
-    // App not running — show guidance, don't bother looking for Suno tab
     setStatus('warning', 'Приложение не запущено');
     hideToken();
-    guidanceEl.style.display = 'block';
     return;
   }
+
+  // Step 2: app is running — look for Suno tab
   guidanceEl.style.display = 'none';
 
-  // App is running — look for Suno tab
   chrome.tabs.query({ url: 'https://suno.ai/*' }, (tabs) => {
     if (!tabs || tabs.length === 0) {
-      setStatus('unknown', 'Откройте suno.ai в браузере и войдите в аккаунт');
+      setStatus('unknown', 'Откройте suno.ai в браузере и войдите');
       hideToken();
       return;
     }
@@ -127,12 +134,20 @@ checkLocalApp().then((appRunning) => {
         return;
       }
 
-      if (response && response.token) {
-        setStatus('connected', '✓ Токен найден');
-        showToken(response.key || 'clerk-session', response.token);
-      } else {
+      if (!response || !response.token) {
         setStatus('unknown', 'Токен не найден — войдите в Suno');
         hideToken();
+        return;
+      }
+
+      // Token found!
+      setStatus('connected', '✓ Токен найден');
+      showToken(response.key || 'clerk-session', response.token);
+
+      // Step 3: auto-send if enabled and not already sent
+      if (autoCheckbox.checked && !tokenSent) {
+        console.log('[Suno Archiver] Auto-sending token from popup...');
+        sendToken(response.token);
       }
     });
   });
