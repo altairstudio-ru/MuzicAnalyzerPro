@@ -1,0 +1,9 @@
+/bin/
+/tmp/
+.env
+*.exe
+__pycache__/
+.idea/
+.vscode/
+*.test
+*.out
