@@ -2,20 +2,27 @@
 // Reads Clerk JWT from localStorage and sends to the extension popup or auto-sends.
 
 const HEALTH_URL = 'http://localhost:8080/api/health';
-const AUTH_URL = 'http://localhost:8080/api/auth';
+const AUTH_URL='http:/...auth';
 const STORAGE_KEY_AUTO = 'suno-archiver:auto-send';
-const MAX_RETRY_SEC = 60; // retry sending for up to 60 seconds after initial failure
+const MAX_RETRY_SEC = 60;
 
-// Known Clerk localStorage keys that may contain the JWT session token.
+// Extensive list of Clerk-related localStorage keys that might hold a JWT.
 const CLERK_KEYS = [
   '__session',
   '__clerk_client_jwt',
   'clerk-jwt',
   '__clerk_js_version',
+  '__clerk_session',
+  'clerk_session',
+  'session',
+  'suno_session',
+  'supabase-auth-token',
+  '__oauth_session',
 ];
 
 // Try to extract a Clerk JWT from localStorage.
 function findClerkJWT() {
+  // 1. Check known Clerk keys
   for (const key of CLERK_KEYS) {
     try {
       const val = localStorage.getItem(key);
@@ -27,15 +34,51 @@ function findClerkJWT() {
     }
   }
 
-  // Fallback: scan all localStorage keys for Clerk-like JWTs
+  // 2. Scan ALL localStorage keys for anything starting with 'ey' (JWT prefix)
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (!key) continue;
-      if (key.startsWith('__clerk') || key.includes('clerk') || key.includes('session')) {
-        const val = localStorage.getItem(key);
-        if (val && typeof val === 'string' && val.startsWith('ey')) {
+      const val = localStorage.getItem(key);
+      if (val && typeof val === 'string') {
+        // Try the value directly
+        if (val.startsWith('ey')) {
           return { key, token: val };
+        }
+        // Try parsing as JSON (Clerk sometimes wraps in an object)
+        try {
+          const parsed = JSON.parse(val);
+          if (typeof parsed === 'string' && parsed.startsWith('ey')) {
+            return { key, token: parsed };
+          }
+          if (parsed && typeof parsed === 'object') {
+            // Check common JWT fields
+            for (const field of ['jwt', 'token', 'accessToken', 'access_token', 'session', 'idToken']) {
+              if (typeof parsed[field] === 'string' && parsed[field].startsWith('ey')) {
+                return { key: `${key}.${field}`, token: parsed[field] };
+              }
+            }
+          }
+        } catch {
+          // Not JSON, skip
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // 3. Check cookies for Clerk tokens (alternative storage)
+  try {
+    const cookies = document.cookie.split(';');
+    for (const cookie of cookies) {
+      const parts = cookie.trim().split('=');
+      if (parts.length < 2) continue;
+      const name = parts[0].trim();
+      if (name.includes('__session') || name.includes('clerk') || name.includes('token')) {
+        const val = decodeURIComponent(parts.slice(1).join('='));
+        if (val.startsWith('ey')) {
+          return { key: `cookie:${name}`, token: val };
         }
       }
     }
@@ -44,6 +87,35 @@ function findClerkJWT() {
   }
 
   return null;
+}
+
+// Debug: dump all localStorage keys and cookie names (no values) for diagnostics.
+function debugStorage() {
+  const info = {
+    localStorageKeys: [],
+    localStorageCount: 0,
+    cookieNames: [],
+    hasJWTs: [],
+  };
+  try {
+    info.localStorageCount = localStorage.length;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      const val = localStorage.getItem(key);
+      info.localStorageKeys.push(key);
+      if (val && typeof val === 'string' && val.startsWith('ey')) {
+        info.hasJWTs.push(key);
+      }
+    }
+  } catch {}
+  try {
+    document.cookie.split(';').forEach(c => {
+      const name = c.trim().split('=')[0];
+      if (name) info.cookieNames.push(name);
+    });
+  } catch {}
+  return info;
 }
 
 // Check if the local app is running.
@@ -87,11 +159,10 @@ async function tryAutoSend() {
   }
   console.log('[Suno Archiver] Found Clerk JWT (key:', result.key, ')');
 
-  // Get auto-send preference
   const data = await chrome.storage.sync.get([STORAGE_KEY_AUTO]);
   const autoSend = data[STORAGE_KEY_AUTO];
   if (autoSend === false) {
-    console.log('[Suno Archiver] Auto-send disabled in settings');
+    console.log('[Suno Archiver] Auto-send disabled');
     return;
   }
 
@@ -99,36 +170,28 @@ async function tryAutoSend() {
   const ok = await sendToken(result.token);
   if (ok) return;
 
-  // First attempt failed (app likely offline) — retry in background
-  console.log('[Suno Archiver] App offline, will retry for ' + MAX_RETRY_SEC + 's...');
+  // Retry if app offline
+  console.log('[Suno Archiver] App offline, retrying for ' + MAX_RETRY_SEC + 's...');
   const startTime = Date.now();
   const retryInterval = setInterval(async () => {
-    const elapsed = (Date.now() - startTime) / 1000;
-    if (elapsed > MAX_RETRY_SEC) {
+    if ((Date.now() - startTime) / 1000 > MAX_RETRY_SEC) {
       clearInterval(retryInterval);
-      console.log('[Suno Archiver] Retry timeout — token not sent');
       return;
     }
-
-    const running = await isAppRunning();
-    if (!running) return; // still offline, keep retrying
-
-    const ok = await sendToken(result.token);
-    if (ok) {
+    if (!(await isAppRunning())) return;
+    if (await sendToken(result.token)) {
       clearInterval(retryInterval);
-      console.log('[Suno Archiver] Token sent on retry (app came online)');
     }
-  }, 5000); // check every 5 seconds
+  }, 5000);
 }
 
 // Run on page load
 tryAutoSend();
 
-// Listen for manual trigger from popup
+// Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'getToken') {
-    const result = findClerkJWT();
-    sendResponse(result);
+    sendResponse(findClerkJWT());
     return true;
   }
 
@@ -139,6 +202,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else {
       sendResponse({ ok: false, error: 'No Clerk JWT found' });
     }
+    return true;
+  }
+
+  if (request.action === 'debug') {
+    sendResponse({
+      found: findClerkJWT(),
+      storage: debugStorage(),
+    });
     return true;
   }
 });

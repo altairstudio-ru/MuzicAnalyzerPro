@@ -158,6 +158,8 @@ checkLocalApp().then((appRunning) => {
     if (!response || !response.token) {
       setStatus('unknown', 'Токен не найден — войдите в Suno');
       hideToken();
+      // Show debug section when token not found
+      document.getElementById('debug-section').style.display = 'block';
       return;
     }
 
@@ -184,4 +186,56 @@ sendBtn.addEventListener('click', () => {
 autoCheckbox.addEventListener('change', () => {
   const enabled = autoCheckbox.checked;
   chrome.storage.sync.set({ [STORAGE_KEY_AUTO]: enabled }, () => {});
+});
+
+// —— Debug ——
+
+document.getElementById('debug-toggle').addEventListener('click', async () => {
+  const content = document.getElementById('debug-content');
+  const arrow = document.getElementById('debug-arrow');
+  const isHidden = content.style.display === 'none';
+
+  if (isHidden) {
+    content.style.display = 'block';
+    arrow.textContent = '▼';
+    content.textContent = 'Загрузка...';
+
+    // Find suno.com tab and ask for debug info
+    const tabs = await chrome.tabs.query({ url: 'https://suno.com/*' });
+    if (!tabs || tabs.length === 0) {
+      content.textContent = 'Нет открытых вкладок suno.com';
+      return;
+    }
+
+    try {
+      const resp = await chrome.tabs.sendMessage(tabs[0].id, { action: 'debug' });
+      if (chrome.runtime.lastError || !resp) {
+        content.textContent = 'Content script не отвечает — обновите страницу';
+        return;
+      }
+
+      let out = '';
+      out += `localStorage keys (${resp.storage.localStorageCount}):\n`;
+      if (resp.storage.localStorageKeys.length === 0) {
+        out += '  (пусто)\n';
+      } else {
+        for (const k of resp.storage.localStorageKeys) {
+          const hasJWT = resp.storage.hasJWTs.includes(k) ? ' ← JWT!' : '';
+          out += `  ${k}${hasJWT}\n`;
+        }
+      }
+      out += `\ncookies (${resp.storage.cookieNames.length}):\n`;
+      for (const c of resp.storage.cookieNames) {
+        out += `  ${c}\n`;
+      }
+      if (resp.storage.cookieNames.length === 0) out += '  (пусто)\n';
+      out += `\ntoken found: ${resp.found ? resp.found.key : '✗'}\n`;
+      content.textContent = out;
+    } catch (e) {
+      content.textContent = 'Ошибка: ' + e.message;
+    }
+  } else {
+    content.style.display = 'none';
+    arrow.textContent = '▶';
+  }
 });
