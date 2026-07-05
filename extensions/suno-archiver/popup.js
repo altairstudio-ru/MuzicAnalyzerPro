@@ -118,7 +118,7 @@ checkLocalApp().then((appRunning) => {
   // Step 2: app is running — look for Suno tab
   guidanceEl.style.display = 'none';
 
-  chrome.tabs.query({ url: 'https://suno.com/*' }, (tabs) => {
+  chrome.tabs.query({ url: 'https://suno.com/*' }, async (tabs) => {
     if (!tabs || tabs.length === 0) {
       setStatus('unknown', 'Откройте suno.com в браузере и войдите');
       hideToken();
@@ -127,29 +127,49 @@ checkLocalApp().then((appRunning) => {
 
     const tab = tabs[0];
 
-    chrome.tabs.sendMessage(tab.id, { action: 'getToken' }, (response) => {
-      if (chrome.runtime.lastError) {
-        setStatus('disconnected', 'Перезагрузите страницу suno.com');
-        hideToken();
-        return;
+    // Helper: try to inject content script if not already present
+    async function ensureContentScript(tabId) {
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          files: ['content.js'],
+        });
+        await new Promise(r => setTimeout(r, 300));
+      } catch (e) {
+        // Already injected — ignore
       }
+    }
 
-      if (!response || !response.token) {
-        setStatus('unknown', 'Токен не найден — войдите в Suno');
-        hideToken();
-        return;
-      }
+    function queryToken(tabId) {
+      return new Promise((resolve) => {
+        chrome.tabs.sendMessage(tabId, { action: 'getToken' }, (response) => {
+          resolve(chrome.runtime.lastError ? null : response);
+        });
+      });
+    }
 
-      // Token found!
-      setStatus('connected', '✓ Токен найден');
-      showToken(response.key || 'clerk-session', response.token);
+    // Try to get token — inject content script if needed, retry once
+    let response = await queryToken(tab.id);
+    if (!response) {
+      await ensureContentScript(tab.id);
+      response = await queryToken(tab.id);
+    }
 
-      // Step 3: auto-send if enabled and not already sent
-      if (autoCheckbox.checked && !tokenSent) {
-        console.log('[Suno Archiver] Auto-sending token from popup...');
-        sendToken(response.token);
-      }
-    });
+    if (!response || !response.token) {
+      setStatus('unknown', 'Токен не найден — войдите в Suno');
+      hideToken();
+      return;
+    }
+
+    // Token found!
+    setStatus('connected', '✓ Токен найден');
+    showToken(response.key || 'clerk-session', response.token);
+
+    // Auto-send if enabled
+    if (autoCheckbox.checked && !tokenSent) {
+      console.log('[Suno Archiver] Auto-sending token from popup...');
+      sendToken(response.token);
+    }
   });
 });
 

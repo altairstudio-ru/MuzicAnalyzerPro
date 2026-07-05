@@ -7,7 +7,8 @@
   "homepage_url": "https://github.com/altairstudio-ru/MuzicAnalyzerPro",
 
   "permissions": [
-    "storage"
+    "storage",
+    "scripting"
   ],
 
   "host_permissions": [
