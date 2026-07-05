@@ -32,7 +32,7 @@ func (c *Client) DownloadAudio(trackID, destination string) error {
 	}
 
 	// Another fallback with the auth header (some CDNs require it)
-	audioURL = fmt.Sprintf("https://studio-api.suno.ai/api/feed/%s/audio", trackID)
+	audioURL = fmt.Sprintf("https://studio-api.prod.suno.com/api/feed/%s/audio", trackID)
 	if err := c.downloadWithAuth(audioURL, destination); err == nil {
 		return nil
 	}

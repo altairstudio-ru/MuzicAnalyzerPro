@@ -4,7 +4,7 @@
 'use strict';
 
 const HEALTH_URL = 'http://localhost:8080/api/health';
-const AUTH_URL='http:/...auth';
+const AUTH_URL='http://localhost:8080/api/auth';
 const STORAGE_KEY_AUTO = 'suno-archiver:auto-send';
 const MAX_RETRY_SEC = 60;
 
