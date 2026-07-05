@@ -1,8 +1,10 @@
 // Content script — runs on suno.com
 // Reads Clerk JWT from localStorage and sends to the extension popup or auto-sends.
+(function() {
+'use strict';
 
 const HEALTH_URL = 'http://localhost:8080/api/health';
-const AUTH_URL='http://localhost:8080/api/auth';
+const AUTH_URL='http:/...auth';
 const STORAGE_KEY_AUTO = 'suno-archiver:auto-send';
 const MAX_RETRY_SEC = 60;
 
@@ -266,3 +268,5 @@ function getDetectedEndpoints() {
     return [];
   }
 }
+
+})();
