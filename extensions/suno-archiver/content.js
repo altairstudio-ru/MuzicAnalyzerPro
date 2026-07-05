@@ -188,6 +188,45 @@ async function tryAutoSend() {
 // Run on page load
 tryAutoSend();
 
+// Patch fetch to detect Suno API calls
+(function patchFetch() {
+  const origFetch = window.fetch;
+  window.fetch = function(...args) {
+    const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
+    if (url && (
+      url.includes('suno.com') || url.includes('suno.ai') || url.includes('api')
+    ) && (
+      url.includes('/api/') || url.match(/\/v\d+\//)
+    )) {
+      console.log('[Suno Archiver] 🎯 API call detected:', url);
+      // Save to sessionStorage so popup can read it
+      try {
+        sessionStorage.setItem('suno-archiver:api-endpoints',
+          JSON.stringify([...(JSON.parse(sessionStorage.getItem('suno-archiver:api-endpoints') || '[]')), url].slice(-10)));
+      } catch {}
+    }
+    return origFetch.apply(this, args);
+  };
+
+  // Also patch XMLHttpRequest
+  const origOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(method, url) {
+    if (url && typeof url === 'string' && (
+      url.includes('suno.com') || url.includes('suno.ai')
+    ) && (
+      url.includes('/api/') || url.match(/\/v\d+\//)
+    )) {
+      console.log('[Suno Archiver] 🎯 XHR detected:', method, url);
+      try {
+        const existing = JSON.parse(sessionStorage.getItem('suno-archiver:api-endpoints') || '[]');
+        existing.push(url);
+        sessionStorage.setItem('suno-archiver:api-endpoints', JSON.stringify(existing.slice(-10)));
+      } catch {}
+    }
+    return origOpen.apply(this, arguments);
+  };
+})();
+
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'getToken') {
@@ -209,7 +248,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({
       found: findClerkJWT(),
       storage: debugStorage(),
+      apiEndpoints: getDetectedEndpoints(),
     });
     return true;
   }
+
+  if (request.action === 'getEndpoints') {
+    sendResponse({ endpoints: getDetectedEndpoints() });
+    return true;
+  }
 });
+
+function getDetectedEndpoints() {
+  try {
+    return JSON.parse(sessionStorage.getItem('suno-archiver:api-endpoints') || '[]');
+  } catch {
+    return [];
+  }
+}

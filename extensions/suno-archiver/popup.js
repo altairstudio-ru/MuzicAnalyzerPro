@@ -230,6 +230,15 @@ document.getElementById('debug-toggle').addEventListener('click', async () => {
       }
       if (resp.storage.cookieNames.length === 0) out += '  (пусто)\n';
       out += `\ntoken found: ${resp.found ? resp.found.key : '✗'}\n`;
+
+      // Show detected API endpoints
+      if (resp.apiEndpoints && resp.apiEndpoints.length > 0) {
+        out += `\ndetected API calls (${resp.apiEndpoints.length}):\n`;
+        for (const ep of resp.apiEndpoints) {
+          out += `  ${ep}\n`;
+        }
+      }
+
       content.textContent = out;
     } catch (e) {
       content.textContent = 'Ошибка: ' + e.message;
