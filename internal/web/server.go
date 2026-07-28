@@ -187,9 +187,11 @@ func (s *Server) triggerAnalyze(w http.ResponseWriter, r *http.Request) {
 		ResultJSON: "{}",
 	})
 
+	lyrics := track.Lyrics
+
 	// Run async
 	go func() {
-		_, err := s.Analyzer.Analyze(id, track.AudioPath, []string{"all"})
+		_, err := s.Analyzer.Analyze(id, track.AudioPath, []string{"all"}, lyrics)
 		if err != nil {
 			log.Printf("[analyzer] analyze track %s: %v", id, err)
 		}

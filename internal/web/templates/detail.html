@@ -10,6 +10,26 @@
             if (typeof s !== 'string') return String(s || '');
             return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         }
+        function renderRecommendations(recs) {
+            let html = '<div style="margin:6px 0 10px 8px;border-left:2px solid #30363d;padding-left:12px;">';
+            for (const r of recs) {
+                const color = r.severity === 'critical' ? '#f85149' : r.severity === 'warning' ? '#d29922' : '#3fb950';
+                const icon = r.severity === 'critical' ? '🔴' : r.severity === 'warning' ? '🟡' : '🟢';
+                html += '<div style="padding:8px;margin-bottom:6px;background:#0d1117;border-radius:6px;border-left:3px solid ' + color + '">';
+                html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">';
+                html += '<span>' + icon + '</span>';
+                html += '<span style="font-size:12px;font-weight:600;color:' + color + '">' + r.severity.toUpperCase() + '</span>';
+                html += '<span style="font-size:11px;color:#8b949e">' + escapeHtml(r.area || '') + '</span>';
+                html += '</div>';
+                html += '<div style="font-size:13px;color:#e6edf3;margin:4px 0">' + escapeHtml(r.message || '') + '</div>';
+                if (r.detail) {
+                    html += '<div style="font-size:11px;color:#8b949e">' + escapeHtml(r.detail) + '</div>';
+                }
+                html += '</div>';
+            }
+            html += '</div>';
+            return html;
+        }
         function renderAnalysis(jsonStr) {
             try {
                 const data = JSON.parse(jsonStr);
@@ -58,6 +78,17 @@
                                     html += '<span class="metric-val" style="color:' + color + '">' + (c.excess_db || '0') + ' dB</span></div>';
                                 }
                                 html += '</div>';
+                                continue;
+                            }
+                            if (key === 'segments' && Array.isArray(val)) {
+                                continue;
+                            }
+                            if (key === 'full_text' && typeof val === 'string' && val) {
+                                html += '<div style="margin:6px 0 10px 8px;border-left:2px solid #30363d;padding-left:12px;"><div style="font-size:12px;color:#8b949e;margin-bottom:4px;">full transcription</div><div style="font-size:13px;line-height:1.5;color:#e6edf3;white-space:pre-wrap;max-height:200px;overflow-y:auto;">' + escapeHtml(val) + '</div></div>';
+                                continue;
+                            }
+                            if (key === 'recommendations' && Array.isArray(val)) {
+                                html += renderRecommendations(val);
                                 continue;
                             }
                             if (typeof val === 'object') continue;

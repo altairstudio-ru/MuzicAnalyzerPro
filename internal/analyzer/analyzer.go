@@ -62,7 +62,7 @@ func findAnalyzerDir() string {
 	return ""
 }
 
-func (a *Analyzer) Analyze(trackID, audioPath string, metrics []string) (*AnalysisOutput, error) {
+func (a *Analyzer) Analyze(trackID, audioPath string, metrics []string, lyrics ...string) (*AnalysisOutput, error) {
 	if !strings.HasPrefix(audioPath, "/") {
 		var err error
 		audioPath, err = filepath.Abs(audioPath)
@@ -76,6 +76,9 @@ func (a *Analyzer) Analyze(trackID, audioPath string, metrics []string) (*Analys
 	args := []string{a.Script, "--input", audioPath}
 	if metricsArg != "" && metricsArg != "all" {
 		args = append(args, "--metrics", metricsArg)
+	}
+	if len(lyrics) > 0 && lyrics[0] != "" {
+		args = append(args, "--lyrics", lyrics[0])
 	}
 
 	var stderr bytes.Buffer

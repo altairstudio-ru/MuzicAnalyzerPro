@@ -5,6 +5,8 @@ import pyloudnorm as pyln
 def measure(audio: np.ndarray, sr: int) -> dict:
     if audio.shape[0] > 1:
         audio = np.mean(audio, axis=0)
+    else:
+        audio = audio.flatten()
     meter = pyln.Meter(sr)
     lufs = meter.integrated_loudness(audio)
     peak = float(np.max(np.abs(audio)))
