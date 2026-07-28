@@ -10,6 +10,8 @@ import (
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/web"
 )
 
+var version = "dev"
+
 func main() {
 	var basePath string
 
@@ -19,6 +21,7 @@ func main() {
 		Long: `Suno Archiver is a CLI tool for archiving Suno AI music tracks.
 It downloads tracks with full metadata (prompts, lyrics, tags) to your local library
 and provides a web UI for browsing, searching, and organizing them.`,
+		Version: version,
 	}
 
 	rootCmd.PersistentFlags().StringVar(&basePath, "path", "~/.muzicanalyzer", "Path to the library directory")
@@ -115,7 +118,15 @@ Opens on http://localhost:8080 by default.`,
 	}
 	serveCmd.Flags().StringP("port", "p", ":8080", "Port to listen on")
 
-	rootCmd.AddCommand(authCmd, syncCmd, serveCmd)
+	versionCmd := &cobra.Command{
+		Use:   "version",
+		Short: "Print the version number",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println("suno-archiver version", version)
+		},
+	}
+
+	rootCmd.AddCommand(authCmd, syncCmd, serveCmd, versionCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

@@ -27,4 +27,14 @@ CREATE TABLE IF NOT EXISTS workspaces (
 
 CREATE INDEX IF NOT EXISTS idx_tracks_workspace ON tracks(workspace);
 CREATE INDEX IF NOT EXISTS idx_tracks_created_at ON tracks(created_at);
+
+CREATE TABLE IF NOT EXISTS analysis_results (
+    track_id    TEXT PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+    version     INTEGER NOT NULL DEFAULT 1,
+    status      TEXT NOT NULL DEFAULT 'pending',
+    error_msg   TEXT NOT NULL DEFAULT '',
+    result_json TEXT NOT NULL DEFAULT '{}',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `

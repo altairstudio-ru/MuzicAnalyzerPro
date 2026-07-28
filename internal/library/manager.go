@@ -53,81 +53,89 @@ func (m *Manager) Close() error {
 func (m *Manager) Sync() (*models.SyncStats, error) {
 	stats := &models.SyncStats{}
 
-	// 1. Fetch all tracks from Suno
-	apiTracks, err := m.Suno.FetchAllTracks()
-	if err != nil {
-		return nil, fmt.Errorf("fetch tracks: %w", err)
-	}
-	stats.TotalTracks = len(apiTracks)
-
-	// 2. Process each track
+	// Fetch and process page by page to handle rate limits gracefully
+	page := 0
+	pageSize := 50
 	workspaceSet := make(map[string]bool)
-	for _, track := range apiTracks {
-		isNew := false
 
-		// Check if track already exists
-		existing, err := db.GetTrack(m.DB, track.ID)
+	for {
+		// Fetch a single page
+		resp, err := m.Suno.FetchTracks(page, pageSize)
 		if err != nil {
-			stats.Errors++
-			continue
-		}
-		if existing == nil {
-			isNew = true
-		}
-
-		// Track workspace
-		if track.Workspace != "" {
-			workspaceSet[track.Workspace] = true
+			// If rate limited or other error, return what we've processed so far
+			if stats.TotalTracks > 0 {
+				return stats, fmt.Errorf("fetch page %d: %w (processed %d tracks)", page, err, stats.TotalTracks)
+			}
+			return nil, fmt.Errorf("fetch page %d: %w", page, err)
 		}
 
-		// Set audio path
-		audioPath := m.audioPath(track)
+		// Process tracks from this page
+		for _, track := range resp.Tracks {
+			isNew := false
 
-		// Try to download if not already downloaded
-		if existing == nil || !existing.IsDownloaded {
-			err := m.downloadTrack(track, audioPath)
+			existing, err := db.GetTrack(m.DB, track.ID)
 			if err != nil {
 				stats.Errors++
-				// Still upsert the metadata even if download fails
-			} else {
-				stats.Downloaded++
-				track.IsDownloaded = true
-				track.AudioPath = audioPath
-				// Get file info
-				if fi, err := os.Stat(audioPath); err == nil {
-					track.FileSize = fi.Size()
-				}
-				// Compute hash
-				if hash, err := fileHash(audioPath); err == nil {
-					track.AudioHash = hash
-				}
+				continue
 			}
-		} else {
-			track.IsDownloaded = true
-			track.AudioPath = existing.AudioPath
-			track.AudioHash = existing.AudioHash
-			track.FileSize = existing.FileSize
+			if existing == nil {
+				isNew = true
+			}
+
+			if track.Workspace != "" {
+				workspaceSet[track.Workspace] = true
+			}
+
+			audioPath := m.audioPath(track)
+
+			if existing == nil || !existing.IsDownloaded {
+				err := m.downloadTrack(track, audioPath)
+				if err != nil {
+					stats.Errors++
+				} else {
+					stats.Downloaded++
+					track.IsDownloaded = true
+					track.AudioPath = audioPath
+					if fi, err := os.Stat(audioPath); err == nil {
+						track.FileSize = fi.Size()
+					}
+					if hash, err := fileHash(audioPath); err == nil {
+						track.AudioHash = hash
+					}
+				}
+			} else {
+				track.IsDownloaded = true
+				track.AudioPath = existing.AudioPath
+				track.AudioHash = existing.AudioHash
+				track.FileSize = existing.FileSize
+			}
+
+			if err := db.UpsertTrack(m.DB, &track); err != nil {
+				stats.Errors++
+				continue
+			}
+
+			stats.TotalTracks++
+
+			if isNew {
+				stats.NewTracks++
+			} else {
+				stats.UpdatedTracks++
+			}
 		}
 
-		// Upsert to database
-		if err := db.UpsertTrack(m.DB, &track); err != nil {
-			stats.Errors++
-			continue
+		// Check if there are more pages
+		if !resp.HasMore || len(resp.Tracks) == 0 {
+			break
 		}
-
-		if isNew {
-			stats.NewTracks++
-		} else {
-			stats.UpdatedTracks++
-		}
+		page++
 	}
 
-	// 3. Update workspace entries
+	// Update workspace entries
 	for ws := range workspaceSet {
 		if err := db.UpsertWorkspace(m.DB, &models.Workspace{
 			Name: ws,
 		}); err != nil {
-			// Non-fatal
 			continue
 		}
 		if err := db.UpdateWorkspaceTrackCount(m.DB, ws); err != nil {

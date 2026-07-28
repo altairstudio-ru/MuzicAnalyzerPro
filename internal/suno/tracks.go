@@ -1,6 +1,7 @@
 package suno
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,8 +10,8 @@ import (
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/pkg/models"
 )
 
-// apiTrack represents the raw Suno API response for a track.
-// Field mapping is best-effort based on the undocumented API.
+// apiTrack represents the raw Suno API response for a track (new v3 API).
+// Field mapping based on the undocumented API response.
 type apiTrack struct {
 	ID              string `json:"id"`
 	Title           string `json:"title"`
@@ -21,36 +22,68 @@ type apiTrack struct {
 	Prompt          string `json:"prompt"`
 	Lyrics          string `json:"lyrics"`
 	LyricsGenerated string `json:"lyrics_generated"`
-	Tags            string `json:"tags"`          // comma-separated or JSON
-	TagsArray       []any  `json:"tags_array"`    // if it comes as array
+	Tags            string `json:"tags"`           // comma-separated or JSON
+	TagsArray       []any  `json:"tags_array"`     // if it comes as array
 	WorkspaceName   string `json:"workspace_name"`
-	Workspace       string `json:"workspace"`     // sometimes nested
+	Workspace       string `json:"workspace"`      // sometimes nested
 	Duration        int    `json:"duration"`
 	CreatedAt       string `json:"created_at"`
-	CreatedAtRaw    string `json:"createdAt"`     // alternative casing
+	CreatedAtRaw    string `json:"createdAt"`      // alternative casing
 	AudioURL        string `json:"audio_url"`
-	AudioPath       string `json:"audio_path"`    // alternative: CDN path
+	AudioPath       string `json:"audio_path"`     // alternative: CDN path
 	IsPublic        bool   `json:"is_public"`
-	Status          string `json:"status"`        // "complete", "generating"
+	Status          string `json:"status"`         // "complete", "generating"
+
+	// New v3 API fields
+	PlayCount        int        `json:"play_count"`
+	UpvoteCount      int        `json:"upvote_count"`
+	EntityType       string     `json:"entity_type"`
+	VideoURL         string     `json:"video_url"`
+	AudioURLNew      string     `json:"audio_url"`    // duplicate, but keep for compatibility
+	MediaURLs        []MediaURL `json:"media_urls"`
+	ImageURL         string     `json:"image_url"`
+	ImageLargeURL    string     `json:"image_large_url"`
+	MajorModelVersion string    `json:"major_model_version"`
+	ModelName        string     `json:"model_name"`
+	Metadata         TrackMetadata `json:"metadata"`
 }
 
-// FetchTracksResponse is the paginated response from the feed endpoint.
+type MediaURL struct {
+	URL         string `json:"url"`
+	ContentType string `json:"content_type"`
+	Delivery    string `json:"delivery"`
+	Encoding    string `json:"encoding"`
+}
+
+type TrackMetadata struct {
+	Tags  string `json:"tags"`
+	Prompt string `json:"prompt"`
+}
+
+// FetchTracksResponse is the paginated response from the feed v3 endpoint.
 type FetchTracksResponse struct {
-	Tracks []models.Track `json:"tracks"`
-	Next   string         `json:"next"`     // cursor for next page
-	HasMore bool          `json:"has_more"` // whether more pages exist
-	Page    int           `json:"page"`
+	Tracks   []models.Track `json:"tracks"`
+	Next     string         `json:"next"`      // cursor for next page
+	HasMore  bool           `json:"has_more"`  // whether more pages exist
+	Page     int            `json:"page"`
 }
 
-// FetchTracks retrieves the user's tracks from Suno.
-// It handles pagination and converts API responses to our models.
+// FetchTracks retrieves the user's tracks from Suno using the new v3 API.
+// It uses POST with JSON body and handles cursor-based pagination.
 func (c *Client) FetchTracks(page int, pageSize int) (*FetchTracksResponse, error) {
 	if pageSize <= 0 || pageSize > 200 {
 		pageSize = 50
 	}
 
-	path := fmt.Sprintf("/api/feed/?page=%d&page_size=%d", page, pageSize)
-	resp, err := c.doRequest("GET", path, nil)
+	// For cursor-based pagination, page 0 = first page, subsequent pages use next_cursor
+	path := "/api/feed/v3"
+	bodyData := map[string]interface{}{
+		"page":      page,
+		"page_size": pageSize,
+	}
+
+	bodyBytes, _ := json.Marshal(bodyData)
+	resp, err := c.doRequest("POST", path, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("fetch tracks: %w", err)
 	}
@@ -61,47 +94,26 @@ func (c *Client) FetchTracks(page int, pageSize int) (*FetchTracksResponse, erro
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
-	// The API may return either a JSON array or an object with a results array
-	var apiTracks []apiTrack
-	if err := json.Unmarshal(body, &apiTracks); err != nil {
-		// Try wrapped response
-		var wrapped struct {
-			Results []apiTrack `json:"results"`
-			Total   int        `json:"total"`
-			Page    int        `json:"page"`
-			HasMore bool       `json:"has_more"`
-		}
-		if err2 := json.Unmarshal(body, &wrapped); err2 != nil {
-			// Try feed container
-			var feedWrapper struct {
-				Feed []apiTrack `json:"feed"`
-			}
-			if err3 := json.Unmarshal(body, &feedWrapper); err3 != nil {
-				// Return raw parse error with first attempt
-				return nil, fmt.Errorf("parse tracks response: %w (body: %s)", err, truncate(string(body), 500))
-			}
-			apiTracks = feedWrapper.Feed
-		} else {
-			result := &FetchTracksResponse{
-				Tracks: convertTracks(wrapped.Results),
-				Next:   fmt.Sprintf("%d", wrapped.Page+1),
-				HasMore: wrapped.HasMore,
-				Page:    wrapped.Page,
-			}
-			return result, nil
-		}
+	// Parse new response format: {"clips": [...], "next_cursor": "...", "has_more": true}
+	var v3Resp struct {
+		Clips      []apiTrack `json:"clips"`
+		NextCursor string     `json:"next_cursor"`
+		HasMore    bool       `json:"has_more"`
+	}
+	if err := json.Unmarshal(body, &v3Resp); err != nil {
+		return nil, fmt.Errorf("parse v3 tracks response: %w (body: %s)", err, truncate(string(body), 500))
 	}
 
 	result := &FetchTracksResponse{
-		Tracks: convertTracks(apiTracks),
-		Next:   fmt.Sprintf("%d", page+1),
-		HasMore: len(apiTracks) >= pageSize,
-		Page:    page,
+		Tracks:   convertTracks(v3Resp.Clips),
+		Next:     v3Resp.NextCursor,
+		HasMore:  v3Resp.HasMore,
+		Page:     page,
 	}
 	return result, nil
 }
 
-// FetchAllTracks retrieves ALL tracks by paginating through the feed.
+// FetchAllTracks retrieves ALL tracks by paginating through the feed using cursor.
 func (c *Client) FetchAllTracks() ([]models.Track, error) {
 	var allTracks []models.Track
 	page := 0
@@ -124,26 +136,20 @@ func (c *Client) FetchAllTracks() ([]models.Track, error) {
 }
 
 // FetchTrackMetadata retrieves a single track's metadata.
+// Note: The v3 API doesn't have a single-track endpoint, so we fetch the feed
+// and filter. This is inefficient but works for now.
 func (c *Client) FetchTrackMetadata(trackID string) (*models.Track, error) {
-	path := fmt.Sprintf("/api/feed/%s", trackID)
-	resp, err := c.doRequest("GET", path, nil)
+	// Try to get from first page (most recent tracks)
+	resp, err := c.FetchTracks(0, 100)
 	if err != nil {
 		return nil, fmt.Errorf("fetch track metadata: %w", err)
 	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
+	for _, t := range resp.Tracks {
+		if t.ID == trackID {
+			return &t, nil
+		}
 	}
-
-	var t apiTrack
-	if err := json.Unmarshal(body, &t); err != nil {
-		return nil, fmt.Errorf("parse track metadata: %w", err)
-	}
-
-	track := convertTrack(t)
-	return &track, nil
+	return nil, fmt.Errorf("track %s not found in recent feed", trackID)
 }
 
 // convertTracks converts a slice of API tracks to model Tracks.
@@ -157,13 +163,25 @@ func convertTracks(apiTracks []apiTrack) []models.Track {
 
 // convertTrack converts a single API track to a model Track.
 func convertTrack(t apiTrack) models.Track {
+	// Extract tags from metadata if available, fallback to old fields
+	tags := parseTags(t.Tags, t.TagsArray)
+	if len(tags) == 0 && t.Metadata.Tags != "" {
+		tags = parseTags(t.Metadata.Tags, nil)
+	}
+
+	// Extract prompt from metadata if available
+	prompt := t.Prompt
+	if prompt == "" && t.Metadata.Prompt != "" {
+		prompt = t.Metadata.Prompt
+	}
+
 	return models.Track{
 		ID:        t.ID,
 		Title:     firstNonEmpty(t.Title, t.DisplayName, t.SongName),
 		Artist:    firstNonEmpty(t.Artist, t.ArtistName),
-		Prompt:    t.Prompt,
+		Prompt:    prompt,
 		Lyrics:    firstNonEmpty(t.Lyrics, t.LyricsGenerated),
-		Tags:      parseTags(t.Tags, t.TagsArray),
+		Tags:      tags,
 		Workspace: firstNonEmpty(t.Workspace, t.WorkspaceName),
 		Duration:  t.Duration,
 		CreatedAt: firstNonEmpty(t.CreatedAt, t.CreatedAtRaw),

@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/analyzer"
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/db"
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/library"
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/pkg/models"
@@ -22,20 +23,22 @@ var templateFS embed.FS
 
 // Server is the web UI server.
 type Server struct {
-	Router  *chi.Mux
-	Manager *library.Manager
-	DB      *sql.DB
-	Tmpl    *template.Template
+	Router   *chi.Mux
+	Manager  *library.Manager
+	DB       *sql.DB
+	Tmpl     *template.Template
+	Analyzer *analyzer.Analyzer
 }
 
 // pageData holds common data available to all templates.
 type pageData struct {
-	TrackCount int
-	DLCount    int
-	Workspaces []models.Workspace
-	Tracks     []models.Track
-	Filter     models.TrackFilter
-	Search     string
+	TrackCount     int
+	DLCount        int
+	Workspaces     []models.Workspace
+	Tracks         []models.Track
+	Filter         models.TrackFilter
+	Search         string
+	AnalysisResult *db.AnalysisResult
 }
 
 // NewServer creates a new web server with the given library manager.
@@ -45,11 +48,15 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 		return nil, err
 	}
 
+	pythonBin := ".venv/bin/python3"
+	anz := analyzer.New(mgr.DB, pythonBin)
+
 	s := &Server{
-		Router:  chi.NewRouter(),
-		Manager: mgr,
-		DB:      mgr.DB,
-		Tmpl:    tmpl,
+		Router:   chi.NewRouter(),
+		Manager:  mgr,
+		DB:       mgr.DB,
+		Tmpl:     tmpl,
+		Analyzer: anz,
 	}
 
 	s.Router.Use(middleware.Logger)
@@ -62,6 +69,8 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 	s.Router.Post("/api/auth", s.authHandler)
 	s.Router.Options("/api/auth", s.authCORS)
 	s.Router.Get("/api/health", s.healthHandler)
+	s.Router.Post("/analyze/{id}", s.triggerAnalyze)
+	s.Router.Get("/analyze/{id}/status", s.analyzeStatus)
 
 	return s, nil
 }
@@ -109,11 +118,14 @@ func (s *Server) trackDetail(w http.ResponseWriter, r *http.Request) {
 	dlCount, _ := db.GetDownloadedCount(s.DB)
 	workspaces, _ := db.ListWorkspaces(s.DB)
 
+	analysisResult, _ := db.GetAnalysisResult(s.DB, id)
+
 	data := pageData{
-		TrackCount: trackCount,
-		DLCount:    dlCount,
-		Workspaces: workspaces,
-		Tracks:     []models.Track{*track},
+		TrackCount:     trackCount,
+		DLCount:        dlCount,
+		Workspaces:     workspaces,
+		Tracks:         []models.Track{*track},
+		AnalysisResult: analysisResult,
 	}
 
 	s.render(w, "detail.html", data)
@@ -152,6 +164,57 @@ func (s *Server) serveAudio(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Accept-Ranges", "bytes")
 	http.ServeFile(w, r, track.AudioPath)
+}
+
+// triggerAnalyze starts analysis for a track.
+func (s *Server) triggerAnalyze(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	track, err := db.GetTrack(s.DB, id)
+	if err != nil || track == nil {
+		http.Error(w, "Track not found", http.StatusNotFound)
+		return
+	}
+	if !track.IsDownloaded {
+		http.Error(w, "Audio not downloaded", http.StatusBadRequest)
+		return
+	}
+
+	// Insert pending record immediately so the redirect shows pending status
+	_ = db.UpsertAnalysisResult(s.DB, &db.AnalysisResult{
+		TrackID:    id,
+		Version:    1,
+		Status:     "pending",
+		ResultJSON: "{}",
+	})
+
+	// Run async
+	go func() {
+		_, err := s.Analyzer.Analyze(id, track.AudioPath, []string{"all"})
+		if err != nil {
+			log.Printf("[analyzer] analyze track %s: %v", id, err)
+		}
+	}()
+
+	w.Header().Set("HX-Redirect", "/tracks/"+id)
+	w.WriteHeader(http.StatusOK)
+}
+
+// analyzeStatus returns the analysis result JSON for a track.
+func (s *Server) analyzeStatus(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	result, err := db.GetAnalysisResult(s.DB, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if result == nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_found"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
 }
 
 // healthHandler returns 200 — used by the extension to check if the app is running.

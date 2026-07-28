@@ -5,6 +5,79 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{(index .Tracks 0).Title}} — Suno Archiver</title>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script>
+        function escapeHtml(s) {
+            if (typeof s !== 'string') return String(s || '');
+            return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+        function renderAnalysis(jsonStr) {
+            try {
+                const data = JSON.parse(jsonStr);
+                let html = '';
+                if (data.status === 'error') {
+                    html = '<div class="section"><h3>Анализ</h3><p style="color:#f85149">Ошибка: ' + escapeHtml(data.error_msg || 'неизвестная ошибка') + '</p></div>';
+                    document.getElementById('analysis-render').innerHTML = html;
+                    return;
+                }
+                if (data.status === 'pending') {
+                    html = '<div class="analysis-block"><div class="analysis-header"><span>🎯 Анализ трека</span> <span style="color:#d29922">⏳ выполняется...</span></div></div>';
+                    document.getElementById('analysis-render').innerHTML = html;
+                    setTimeout(pollAnalysis, 3000);
+                    return;
+                }
+                const results = data.result_json ? JSON.parse(data.result_json) : {};
+                html += '<div class="analysis-block">';
+                html += '<div class="analysis-header"><span>🎯 Анализ трека</span> <span class="badge-dl yes">✓ выполнен</span></div>';
+                if (results.elapsed_seconds) {
+                    html += '<div class="analysis-sub">за ' + results.elapsed_seconds + ' сек</div>';
+                }
+                if (results.results) {
+                    for (const [metric, vals] of Object.entries(results.results)) {
+                        html += '<div class="metric-group"><div class="metric-title">' + metric.charAt(0).toUpperCase() + metric.slice(1) + '</div>';
+                        for (const [key, val] of Object.entries(vals)) {
+                            if (key.startsWith('raw_')) continue;
+                            const label = key.replace(/_/g, ' ');
+                            const score = typeof val === 'number' && key !== 'peak_amplitude';
+                            html += '<div class="metric-row"><span class="metric-label">' + label + '</span>';
+                            if (score) {
+                                const pct = Math.min(100, Math.max(0, (val / 10) * 100));
+                                const color = pct >= 70 ? '#3fb950' : pct >= 40 ? '#d29922' : '#f85149';
+                                html += '<div class="metric-bar-bg"><div class="metric-bar" style="width:' + pct + '%;background:' + color + '"></div></div>';
+                                html += '<span class="metric-val" style="color:' + color + '">' + val + '</span>';
+                            } else {
+                                html += '<span class="metric-val">' + val + '</span>';
+                            }
+                            html += '</div>';
+                        }
+                        html += '</div>';
+                    }
+                }
+                if (results.errors && results.errors.length > 0) {
+                    html += '<div class="section"><h3>Ошибки</h3>';
+                    for (const e of results.errors) {
+                        html += '<p style="color:#f85149;font-size:13px">' + escapeHtml(e.metric) + ': ' + escapeHtml(e.error) + '</p>';
+                    }
+                    html += '</div>';
+                }
+                html += '</div>';
+                document.getElementById('analysis-render').innerHTML = html;
+            } catch(e) {
+                console.error('analysis render error:', e);
+            }
+        }
+        function pollAnalysis() {
+            const statusEl = document.getElementById('analysis-status-data');
+            if (!statusEl) return;
+            fetch(statusEl.dataset.url)
+                .then(r => r.json())
+                .then(data => renderAnalysis(JSON.stringify(data)))
+                .catch(() => setTimeout(pollAnalysis, 5000));
+        }
+        document.addEventListener('DOMContentLoaded', function() {
+            const el = document.getElementById('analysis-json');
+            if (el) renderAnalysis(el.textContent);
+        });
+    </script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -62,6 +135,17 @@
         .detail-card .meta-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
         .detail-card .player { margin: 16px 0; }
         .detail-card .player audio { width: 100%; }
+
+        .analysis-block { margin-top: 20px; }
+        .analysis-header { font-size: 16px; font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+        .analysis-sub { font-size: 12px; color: #8b949e; margin-bottom: 12px; }
+        .metric-group { margin-bottom: 16px; }
+        .metric-title { font-size: 12px; color: #58a6ff; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+        .metric-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 13px; }
+        .metric-label { flex: 0 0 140px; color: #8b949e; text-transform: capitalize; }
+        .metric-bar-bg { flex: 1; height: 6px; background: #21262d; border-radius: 3px; overflow: hidden; }
+        .metric-bar { height: 100%; border-radius: 3px; transition: width 0.3s; }
+        .metric-val { flex: 0 0 40px; text-align: right; font-family: monospace; font-size: 12px; font-weight: 600; }
     </style>
 </head>
 <body>
@@ -138,6 +222,22 @@
                 <p>Путь: {{.AudioPath}}</p>
             </div>
         </div>
+
+        {{if .IsDownloaded}}
+        <div class="detail-card" style="margin-top:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <h2 style="font-size:16px;">🔬 Анализ трека</h2>
+                {{if not $.AnalysisResult}}
+                <button class="btn btn-primary" hx-post="/analyze/{{.ID}}" hx-swap="none">🎧 Анализировать</button>
+                {{end}}
+            </div>
+            {{if $.AnalysisResult}}
+            <div id="analysis-json" style="display:none;">{{$.AnalysisResult.ResultJSON}}</div>
+            <div id="analysis-status-data" data-url="/analyze/{{.ID}}/status" style="display:none;"></div>
+            <div id="analysis-render"></div>
+            {{end}}
+        </div>
+        {{end}}
         {{end}}
     </main>
 </div>
