@@ -16,11 +16,13 @@ import sys
 import time
 
 from utils.audio import load_audio
-from metrics import loudness, phase
+from metrics import loudness, phase, temporal, spectral
 
 METRICS = {
     "loudness": loudness,
     "phase": phase,
+    "temporal": temporal,
+    "spectral": spectral,
 }
 
 

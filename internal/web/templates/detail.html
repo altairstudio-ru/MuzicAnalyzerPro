@@ -36,8 +36,37 @@
                         html += '<div class="metric-group"><div class="metric-title">' + metric.charAt(0).toUpperCase() + metric.slice(1) + '</div>';
                         for (const [key, val] of Object.entries(vals)) {
                             if (key.startsWith('raw_')) continue;
+                            if (key === 'band_energy' && typeof val === 'object') {
+                                const bands = Object.entries(val).sort((a,b) => a[0].localeCompare(b[0]));
+                                html += '<div style="margin:6px 0 10px 8px;border-left:2px solid #30363d;padding-left:12px;">';
+                                for (const [band, energy] of bands) {
+                                    const pct = Math.min(100, Math.max(0, energy));
+                                    const color = pct > 50 ? '#f85149' : pct > 25 ? '#d29922' : '#3fb950';
+                                    html += '<div class="metric-row"><span class="metric-label">' + band.replace(/_/g,' ') + '</span>';
+                                    html += '<div class="metric-bar-bg"><div class="metric-bar" style="width:' + pct + '%;background:' + color + '"></div></div>';
+                                    html += '<span class="metric-val" style="color:' + color + '">' + energy.toFixed(1) + '%</span></div>';
+                                }
+                                html += '</div>';
+                                continue;
+                            }
+                            if (key === 'conflicts' && Array.isArray(val)) {
+                                html += '<div style="margin:6px 0 10px 8px;border-left:2px solid #30363d;padding-left:12px;">';
+                                for (const c of val) {
+                                    const color = c.severity === 'critical' ? '#f85149' : c.severity === 'warning' ? '#d29922' : '#3fb950';
+                                    html += '<div class="metric-row"><span class="metric-label" style="flex:1;font-size:11px">' + escapeHtml(c.zone || c.name || '') + '</span>';
+                                    html += '<span style="color:' + color + ';font-size:11px">' + c.severity + '</span>';
+                                    html += '<span class="metric-val" style="color:' + color + '">' + (c.excess_db || '0') + ' dB</span></div>';
+                                }
+                                html += '</div>';
+                                continue;
+                            }
+                            if (typeof val === 'object') continue;
                             const label = key.replace(/_/g, ' ');
-                            const score = typeof val === 'number' && key !== 'peak_amplitude';
+                            const score = typeof val === 'number' && key !== 'peak_amplitude' && key !== 'bpm' && key !== 'spectral_flatness' && key !== 'spectral_bandwidth' && key !== 'spectral_rolloff' && key !== 'key_confidence';
+                            if (key === 'key') {
+                                html += '<div class="metric-row"><span class="metric-label">' + label + '</span><span class="metric-val">' + escapeHtml(String(val)) + '</span></div>';
+                                continue;
+                            }
                             html += '<div class="metric-row"><span class="metric-label">' + label + '</span>';
                             if (score) {
                                 const pct = Math.min(100, Math.max(0, (val / 10) * 100));
