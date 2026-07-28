@@ -71,6 +71,12 @@ func (a *Analyzer) Analyze(trackID, audioPath string, metrics []string, lyrics .
 		}
 	}
 
+	referencePath := ""
+	if len(lyrics) > 1 {
+		referencePath = lyrics[1]
+		lyrics = lyrics[:1]
+	}
+
 	metricsArg := strings.Join(metrics, ",")
 
 	args := []string{a.Script, "--input", audioPath}
@@ -80,6 +86,14 @@ func (a *Analyzer) Analyze(trackID, audioPath string, metrics []string, lyrics .
 	if len(lyrics) > 0 && lyrics[0] != "" {
 		args = append(args, "--lyrics", lyrics[0])
 	}
+	if referencePath != "" {
+		absRef, err := filepath.Abs(referencePath)
+		if err == nil {
+			args = append(args, "--reference", absRef)
+		}
+	}
+	plotDir := filepath.Join(filepath.Dir(a.Script), "..", "plots")
+	args = append(args, "--plot-dir", plotDir)
 
 	var stderr bytes.Buffer
 	cmd := exec.Command(a.PythonBin, args...)

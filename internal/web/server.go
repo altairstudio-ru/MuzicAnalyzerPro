@@ -5,8 +5,11 @@ import (
 	"embed"
 	"encoding/json"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -36,6 +39,7 @@ type pageData struct {
 	DLCount        int
 	Workspaces     []models.Workspace
 	Tracks         []models.Track
+	AllTracks      []models.Track
 	Filter         models.TrackFilter
 	Search         string
 	AnalysisResult *db.AnalysisResult
@@ -71,6 +75,9 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 	s.Router.Get("/api/health", s.healthHandler)
 	s.Router.Post("/analyze/{id}", s.triggerAnalyze)
 	s.Router.Get("/analyze/{id}/status", s.analyzeStatus)
+	s.Router.Post("/compare/upload/{id}", s.compareUpload)
+	s.Router.Post("/compare/select/{id}", s.compareSelect)
+	s.Router.Get("/plots/*", s.servePlot)
 
 	return s, nil
 }
@@ -120,11 +127,14 @@ func (s *Server) trackDetail(w http.ResponseWriter, r *http.Request) {
 
 	analysisResult, _ := db.GetAnalysisResult(s.DB, id)
 
+	allTracks, _ := db.ListTracks(s.DB, models.TrackFilter{Limit: 200})
+
 	data := pageData{
 		TrackCount:     trackCount,
 		DLCount:        dlCount,
 		Workspaces:     workspaces,
 		Tracks:         []models.Track{*track},
+		AllTracks:      allTracks,
 		AnalysisResult: analysisResult,
 	}
 
@@ -217,6 +227,106 @@ func (s *Server) analyzeStatus(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+}
+
+// compareUpload handles reference file upload and triggers comparison analysis.
+func (s *Server) compareUpload(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	track, err := db.GetTrack(s.DB, id)
+	if err != nil || track == nil {
+		http.Error(w, "Track not found", http.StatusNotFound)
+		return
+	}
+	if !track.IsDownloaded {
+		http.Error(w, "Audio not downloaded", http.StatusBadRequest)
+		return
+	}
+
+	r.ParseMultipartForm(50 << 20) // 50MB max
+	file, header, err := r.FormFile("ref_file")
+	if err != nil {
+		http.Error(w, "Missing ref_file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	refDir := filepath.Join(s.Manager.Config.DBDir(), "references", id)
+	os.MkdirAll(refDir, 0755)
+	refPath := filepath.Join(refDir, header.Filename)
+	dst, err := os.Create(refPath)
+	if err != nil {
+		http.Error(w, "Failed to save reference", http.StatusInternalServerError)
+		return
+	}
+	defer dst.Close()
+	io.Copy(dst, file)
+
+	s.analyzeWithReference(w, r, id, track, refPath)
+}
+
+// compareSelect triggers comparison analysis using another synced track as reference.
+func (s *Server) compareSelect(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	track, err := db.GetTrack(s.DB, id)
+	if err != nil || track == nil {
+		http.Error(w, "Track not found", http.StatusNotFound)
+		return
+	}
+	if !track.IsDownloaded {
+		http.Error(w, "Audio not downloaded", http.StatusBadRequest)
+		return
+	}
+
+	refID := r.FormValue("ref_id")
+	if refID == "" {
+		http.Error(w, "ref_id required", http.StatusBadRequest)
+		return
+	}
+	refTrack, err := db.GetTrack(s.DB, refID)
+	if err != nil || refTrack == nil || !refTrack.IsDownloaded {
+		http.Error(w, "Reference track not found or not downloaded", http.StatusBadRequest)
+		return
+	}
+
+	s.analyzeWithReference(w, r, id, track, refTrack.AudioPath)
+}
+
+func (s *Server) analyzeWithReference(w http.ResponseWriter, r *http.Request, id string, track *models.Track, refPath string) {
+	_ = db.UpsertAnalysisResult(s.DB, &db.AnalysisResult{
+		TrackID:    id,
+		Version:    1,
+		Status:     "pending",
+		ResultJSON: "{}",
+	})
+
+	lyrics := track.Lyrics
+
+	go func() {
+		_, err := s.Analyzer.Analyze(id, track.AudioPath, []string{"all"}, lyrics, refPath)
+		if err != nil {
+			log.Printf("[analyzer] compare track %s: %v", id, err)
+		}
+	}()
+
+	w.Header().Set("HX-Redirect", "/tracks/"+id)
+	w.WriteHeader(http.StatusOK)
+}
+
+// servePlot serves comparison plot images.
+func (s *Server) servePlot(w http.ResponseWriter, r *http.Request) {
+	plotPath := chi.URLParam(r, "*")
+	if plotPath == "" {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	plotsDir := filepath.Join(filepath.Dir(s.Analyzer.Script), "..", "plots")
+	fullPath := filepath.Join(plotsDir, plotPath)
+	if !strings.HasPrefix(fullPath, plotsDir) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	http.ServeFile(w, r, fullPath)
 }
 
 // healthHandler returns 200 — used by the extension to check if the app is running.

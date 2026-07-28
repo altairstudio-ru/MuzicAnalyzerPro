@@ -13,6 +13,7 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
 import time
 
@@ -34,6 +35,7 @@ AI_METRICS = {
     "recommendations": recommendations,
 }
 
+REFERENCE_METRICS = ["reference"]
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="MuzicAnalyzerPro audio analysis engine")
@@ -41,6 +43,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lyrics", "-l", default="", help="Original Suno lyrics for comparison")
     parser.add_argument("--metrics", "-m", default="all",
                         help="Comma-separated metrics to run (default: all)")
+    parser.add_argument("--reference", "-r", default="",
+                        help="Path to reference audio file for comparison")
+    parser.add_argument("--plot-dir", default="/tmp/analyzer_plots",
+                        help="Directory for generated comparison plots")
     return parser.parse_args()
 
 
@@ -86,6 +92,19 @@ def run_all(yam: dict) -> dict:
         except Exception as e:
             errors.append({"metric": name, "error": str(e)})
 
+    # Phase 3: Reference matching (needs spectral results)
+    ref_path = yam.get("reference", "")
+    if ref_path:
+        from metrics import reference as ref_mod
+        try:
+            result["results"]["reference"] = ref_mod.measure(
+                yam["audio"], yam["sr"],
+                reference_path=ref_path,
+                all_results=result["results"],
+            )
+        except Exception as e:
+            errors.append({"metric": "reference", "error": str(e)})
+
     if errors:
         result["errors"] = errors
     return result
@@ -101,12 +120,15 @@ def main():
     except Exception as e:
         print(json.dumps({"status": "error", "error": f"load audio: {e}"}))
         sys.exit(1)
+    if args.plot_dir:
+        os.environ['ANALYZER_PLOT_DIR'] = args.plot_dir
     yam = {
         "audio": audio,
         "sr": sr,
         "requested": requested,
         "path": args.input,
         "lyrics": args.lyrics,
+        "reference": args.reference,
     }
     result = run_all(yam)
     elapsed = round(time.time() - t0, 2)

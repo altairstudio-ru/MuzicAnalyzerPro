@@ -6,9 +6,83 @@
     <title>{{(index .Tracks 0).Title}} — Suno Archiver</title>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script>
+        function toggleRefPanel() {
+            const p = document.getElementById('ref-panel');
+            p.style.display = p.style.display === 'none' ? 'block' : 'none';
+        }
         function escapeHtml(s) {
             if (typeof s !== 'string') return String(s || '');
             return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+        function renderReferenceComparison(ref) {
+            let html = '<div class="metric-group" style="border:1px solid #30363d;border-radius:8px;padding:12px;background:#0d1117;">';
+            html += '<div class="metric-title">📊 Reference Match</div>';
+
+            if (ref.error) {
+                html += '<div style="color:#f85149;font-size:13px;">' + escapeHtml(ref.error) + '</div>';
+                html += '</div>';
+                return html;
+            }
+
+            // Domain scores
+            if (ref.domain_scores) {
+                html += '<div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap;">';
+                for (const [domain, score] of Object.entries(ref.domain_scores)) {
+                    const color = score >= 7 ? '#3fb950' : score >= 4 ? '#d29922' : '#f85149';
+                    html += '<div style="flex:1;min-width:80px;text-align:center;padding:8px;background:#161b22;border-radius:6px;border:1px solid #30363d;">';
+                    html += '<div style="font-size:10px;color:#8b949e;text-transform:uppercase;margin-bottom:2px;">' + domain + '</div>';
+                    html += '<div style="font-size:20px;font-weight:700;color:' + color + '">' + score + '</div>';
+                    html += '<div style="height:3px;background:#21262d;border-radius:2px;margin-top:4px;overflow:hidden;">';
+                    html += '<div style="width:' + Math.min(100, score*10) + '%;height:100%;background:' + color + ';border-radius:2px;"></div></div>';
+                    html += '</div>';
+                }
+                html += '</div>';
+            }
+
+            // Similarity scores
+            const simMetrics = [
+                {key:'spectral_similarity', label:'Spectral (EQ)'},
+                {key:'stereo_similarity', label:'Stereo Image'},
+                {key:'dynamic_similarity', label:'Dynamics'},
+            ];
+            for (const m of simMetrics) {
+                const v = ref[m.key];
+                if (v === undefined) continue;
+                const pct = Math.min(100, Math.max(0, (v / 10) * 100));
+                const color = pct >= 70 ? '#3fb950' : pct >= 40 ? '#d29922' : '#f85149';
+                html += '<div class="metric-row"><span class="metric-label">' + m.label + '</span>';
+                html += '<div class="metric-bar-bg"><div class="metric-bar" style="width:' + pct + '%;background:' + color + '"></div></div>';
+                html += '<span class="metric-val" style="color:' + color + '">' + v + '</span></div>';
+            }
+
+            if (ref.loudness_difference !== undefined) {
+                const diff = ref.loudness_difference;
+                const color = Math.abs(diff) < 3 ? '#3fb950' : Math.abs(diff) < 6 ? '#d29922' : '#f85149';
+                html += '<div class="metric-row"><span class="metric-label">Loudness diff</span>';
+                html += '<span class="metric-val" style="color:' + color + '">' + (diff > 0 ? '+' : '') + diff.toFixed(1) + ' LU</span></div>';
+            }
+
+            // Per-band similarity
+            if (ref.per_band_similarity) {
+                html += '<div style="margin:8px 0 4px;font-size:11px;color:#8b949e;">Per-band similarity</div>';
+                for (const [band, score] of Object.entries(ref.per_band_similarity)) {
+                    const pct = Math.min(100, Math.max(0, (score / 10) * 100));
+                    const color = pct >= 70 ? '#3fb950' : pct >= 40 ? '#d29922' : '#f85149';
+                    html += '<div class="metric-row" style="padding:1px 0;"><span class="metric-label" style="flex:0 0 80px;font-size:11px;">' + band.replace(/_/g,' ') + '</span>';
+                    html += '<div class="metric-bar-bg" style="height:4px;"><div class="metric-bar" style="width:' + pct + '%;background:' + color + '"></div></div>';
+                    html += '<span class="metric-val" style="font-size:11px;color:' + color + '">' + score + '</span></div>';
+                }
+            }
+
+            // Comparison plot
+            if (ref.comparison_plot) {
+                html += '<div style="margin-top:10px;">';
+                html += '<img src="/plots/' + encodeURIComponent(ref.comparison_plot.split('/').pop()) + '" style="width:100%;border-radius:6px;border:1px solid #30363d;" alt="Comparison">';
+                html += '</div>';
+            }
+
+            html += '</div>';
+            return html;
         }
         function renderRecommendations(recs) {
             let html = '<div style="margin:6px 0 10px 8px;border-left:2px solid #30363d;padding-left:12px;">';
@@ -103,6 +177,10 @@
                                     html += '</div>';
                                 }
                                 html += '</div>';
+                                continue;
+                            }
+                            if (key === 'reference' && typeof val === 'object') {
+                                html += renderReferenceComparison(val);
                                 continue;
                             }
                             if (key === 'platforms' && typeof val === 'object') {
@@ -326,6 +404,33 @@
                 <button class="btn btn-primary" hx-post="/analyze/{{.ID}}" hx-swap="none">🎧 Анализировать</button>
                 {{end}}
             </div>
+
+            <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="btn" onclick="toggleRefPanel()">📐 Сравнить с референсом</button>
+            </div>
+
+            <div id="ref-panel" style="display:none;margin-bottom:12px;padding:12px;background:#0d1117;border:1px solid #30363d;border-radius:8px;">
+                <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Выберите референсный трек</div>
+                <form hx-post="/compare/select/{{.ID}}" hx-swap="none" style="margin-bottom:8px;">
+                    <select name="ref_id" style="width:100%;padding:8px;background:#161b22;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;font-size:13px;margin-bottom:8px;">
+                        <option value="">— из синхронизированных —</option>
+                        {{range $.AllTracks}}
+                        {{if .IsDownloaded}}
+                        <option value="{{.ID}}">{{.Title}}{{if .Artist}} — {{.Artist}}{{end}}</option>
+                        {{end}}
+                        {{end}}
+                    </select>
+                    <button class="btn btn-primary" type="submit" style="width:100%;">Сравнить</button>
+                </form>
+                <div style="border-top:1px solid #30363d;padding-top:8px;">
+                    <div style="font-size:12px;color:#8b949e;margin-bottom:6px;">Или загрузить файл</div>
+                    <form hx-post="/compare/upload/{{.ID}}" hx-swap="none" enctype="multipart/form-data">
+                        <input type="file" name="ref_file" accept="audio/*" style="width:100%;padding:6px;background:#161b22;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;font-size:12px;margin-bottom:8px;">
+                        <button class="btn btn-primary" type="submit" style="width:100%;">Загрузить и сравнить</button>
+                    </form>
+                </div>
+            </div>
+
             {{if $.AnalysisResult}}
             <div id="analysis-json" style="display:none;">{{$.AnalysisResult.ResultJSON}}</div>
             <div id="analysis-status-data" data-url="/analyze/{{.ID}}/status" style="display:none;"></div>
