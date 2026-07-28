@@ -91,6 +91,41 @@
                                 html += renderRecommendations(val);
                                 continue;
                             }
+                            if (key === 'profiles' && typeof val === 'object') {
+                                html += '<div style="margin:6px 0 10px 8px;border-left:2px solid #30363d;padding-left:12px;">';
+                                const sorted = Object.entries(val).sort((a,b) => b[1].score - a[1].score);
+                                for (const [pk, pv] of sorted) {
+                                    const color = pv.score >= 7 ? '#3fb950' : pv.score >= 4 ? '#d29922' : '#f85149';
+                                    html += '<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;">';
+                                    html += '<span style="flex:1;color:#c9d1d9">' + escapeHtml(pv.device || pk) + '</span>';
+                                    html += '<div style="width:60px;height:4px;background:#21262d;border-radius:2px;overflow:hidden;"><div style="width:' + Math.min(100, pv.score*10) + '%;height:100%;background:' + color + ';border-radius:2px;"></div></div>';
+                                    html += '<span style="width:30px;text-align:right;font-family:monospace;color:' + color + '">' + pv.score + '</span>';
+                                    html += '</div>';
+                                }
+                                html += '</div>';
+                                continue;
+                            }
+                            if (key === 'platforms' && typeof val === 'object') {
+                                html += '<div style="margin:6px 0 10px 8px;border-left:2px solid #30363d;padding-left:12px;">';
+                                for (const [pk, pv] of Object.entries(val)) {
+                                    const color = pv.score >= 7 ? '#3fb950' : pv.score >= 4 ? '#d29922' : '#f85149';
+                                    html += '<div style="padding:6px 0;border-bottom:1px solid #21262d;">';
+                                    html += '<div style="display:flex;align-items:center;gap:6px;font-size:12px;">';
+                                    html += '<span style="flex:1;color:#c9d1d9">' + pk.charAt(0).toUpperCase() + pk.slice(1) + '</span>';
+                                    html += '<span style="font-size:11px;color:#8b949e">' + pv.readiness_percent + '%</span>';
+                                    html += '</div>';
+                                    html += '<div style="display:flex;gap:8px;font-size:11px;color:#8b949e;margin-top:2px;">';
+                                    html += '<span>Penalty: ' + pv.loudness_penalty_db + ' dB</span>';
+                                    if (pv.issues && pv.issues.length > 0) {
+                                        html += '<span style="color:#d29922">⚠ ' + pv.issues.length + ' issues</span>';
+                                    } else {
+                                        html += '<span style="color:#3fb950">✓ compliant</span>';
+                                    }
+                                    html += '</div></div>';
+                                }
+                                html += '</div>';
+                                continue;
+                            }
                             if (typeof val === 'object') continue;
                             const label = key.replace(/_/g, ' ');
                             const score = typeof val === 'number' && key !== 'peak_amplitude' && key !== 'bpm' && key !== 'spectral_flatness' && key !== 'spectral_bandwidth' && key !== 'spectral_rolloff' && key !== 'key_confidence';

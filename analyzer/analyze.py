@@ -17,7 +17,7 @@ import sys
 import time
 
 from utils.audio import load_audio
-from metrics import loudness, phase, temporal, spectral
+from metrics import loudness, phase, temporal, spectral, translation, streaming
 from ai import whisper, recommendations
 
 METRICS = {
@@ -25,10 +25,12 @@ METRICS = {
     "phase": phase,
     "temporal": temporal,
     "spectral": spectral,
+    "translation": translation,
 }
 
 AI_METRICS = {
     "whisper": whisper,
+    "streaming": streaming,
     "recommendations": recommendations,
 }
 
@@ -68,6 +70,11 @@ def run_all(yam: dict) -> dict:
                 result["results"][name] = mod.measure(
                     yam["audio"], yam["sr"],
                     original_lyrics=yam.get("lyrics", ""),
+                )
+            elif name == "streaming":
+                result["results"][name] = mod.measure(
+                    yam["audio"], yam["sr"],
+                    all_results=result["results"],
                 )
             elif name == "recommendations":
                 whisper_result = result["results"].get("whisper")
