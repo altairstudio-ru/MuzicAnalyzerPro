@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/db"
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/suno"
@@ -53,23 +54,19 @@ func (m *Manager) Close() error {
 func (m *Manager) Sync() (*models.SyncStats, error) {
 	stats := &models.SyncStats{}
 
-	// Fetch and process page by page to handle rate limits gracefully
-	page := 0
 	pageSize := 50
+	cursor := ""
 	workspaceSet := make(map[string]bool)
 
 	for {
-		// Fetch a single page
-		resp, err := m.Suno.FetchTracks(page, pageSize)
+		resp, err := m.Suno.FetchTracks(cursor, pageSize)
 		if err != nil {
-			// If rate limited or other error, return what we've processed so far
-			if stats.TotalTracks > 0 {
-				return stats, fmt.Errorf("fetch page %d: %w (processed %d tracks)", page, err, stats.TotalTracks)
+			if suno.IsRateLimited(err) && stats.TotalTracks > 0 {
+				return stats, fmt.Errorf("rate limited at cursor %q (processed %d tracks)", cursor, stats.TotalTracks)
 			}
-			return nil, fmt.Errorf("fetch page %d: %w", page, err)
+			return nil, fmt.Errorf("fetch cursor %q: %w", cursor, err)
 		}
 
-		// Process tracks from this page
 		for _, track := range resp.Tracks {
 			isNew := false
 
@@ -124,14 +121,13 @@ func (m *Manager) Sync() (*models.SyncStats, error) {
 			}
 		}
 
-		// Check if there are more pages
 		if !resp.HasMore || len(resp.Tracks) == 0 {
 			break
 		}
-		page++
+		cursor = resp.Next
+		time.Sleep(500 * time.Millisecond)
 	}
 
-	// Update workspace entries
 	for ws := range workspaceSet {
 		if err := db.UpsertWorkspace(m.DB, &models.Workspace{
 			Name: ws,

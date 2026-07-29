@@ -12,3 +12,8 @@ var (
 	// ErrNotFound is returned when a track is not found.
 	ErrNotFound = errors.New("suno: track not found")
 )
+
+// IsRateLimited returns true if the error is a rate-limit error.
+func IsRateLimited(err error) bool {
+	return errors.Is(err, ErrRateLimited)
+}

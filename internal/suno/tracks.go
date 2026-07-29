@@ -62,24 +62,24 @@ type TrackMetadata struct {
 
 // FetchTracksResponse is the paginated response from the feed v3 endpoint.
 type FetchTracksResponse struct {
-	Tracks   []models.Track `json:"tracks"`
-	Next     string         `json:"next"`      // cursor for next page
-	HasMore  bool           `json:"has_more"`  // whether more pages exist
-	Page     int            `json:"page"`
+	Tracks  []models.Track `json:"tracks"`
+	Next    string         `json:"next"`     // cursor for next page
+	HasMore bool           `json:"has_more"` // whether more pages exist
 }
 
-// FetchTracks retrieves the user's tracks from Suno using the new v3 API.
-// It uses POST with JSON body and handles cursor-based pagination.
-func (c *Client) FetchTracks(page int, pageSize int) (*FetchTracksResponse, error) {
+// FetchTracks retrieves tracks from Suno v3 API using cursor-based pagination.
+// Pass cursor="" for the first page, then use the returned Next cursor.
+func (c *Client) FetchTracks(cursor string, pageSize int) (*FetchTracksResponse, error) {
 	if pageSize <= 0 || pageSize > 200 {
 		pageSize = 50
 	}
 
-	// For cursor-based pagination, page 0 = first page, subsequent pages use next_cursor
 	path := "/api/feed/v3"
 	bodyData := map[string]interface{}{
-		"page":      page,
 		"page_size": pageSize,
+	}
+	if cursor != "" {
+		bodyData["cursor"] = cursor
 	}
 
 	bodyBytes, _ := json.Marshal(bodyData)
@@ -94,7 +94,6 @@ func (c *Client) FetchTracks(page int, pageSize int) (*FetchTracksResponse, erro
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
-	// Parse new response format: {"clips": [...], "next_cursor": "...", "has_more": true}
 	var v3Resp struct {
 		Clips      []apiTrack `json:"clips"`
 		NextCursor string     `json:"next_cursor"`
@@ -105,10 +104,9 @@ func (c *Client) FetchTracks(page int, pageSize int) (*FetchTracksResponse, erro
 	}
 
 	result := &FetchTracksResponse{
-		Tracks:   convertTracks(v3Resp.Clips),
-		Next:     v3Resp.NextCursor,
-		HasMore:  v3Resp.HasMore,
-		Page:     page,
+		Tracks:  convertTracks(v3Resp.Clips),
+		Next:    v3Resp.NextCursor,
+		HasMore: v3Resp.HasMore,
 	}
 	return result, nil
 }
@@ -116,20 +114,20 @@ func (c *Client) FetchTracks(page int, pageSize int) (*FetchTracksResponse, erro
 // FetchAllTracks retrieves ALL tracks by paginating through the feed using cursor.
 func (c *Client) FetchAllTracks() ([]models.Track, error) {
 	var allTracks []models.Track
-	page := 0
+	cursor := ""
 	pageSize := 50
 
 	for {
-		resp, err := c.FetchTracks(page, pageSize)
+		resp, err := c.FetchTracks(cursor, pageSize)
 		if err != nil {
-			return nil, fmt.Errorf("fetch page %d: %w", page, err)
+			return nil, fmt.Errorf("fetch cursor %q: %w", cursor, err)
 		}
 		allTracks = append(allTracks, resp.Tracks...)
 
 		if !resp.HasMore || len(resp.Tracks) == 0 {
 			break
 		}
-		page++
+		cursor = resp.Next
 	}
 
 	return allTracks, nil
@@ -139,8 +137,7 @@ func (c *Client) FetchAllTracks() ([]models.Track, error) {
 // Note: The v3 API doesn't have a single-track endpoint, so we fetch the feed
 // and filter. This is inefficient but works for now.
 func (c *Client) FetchTrackMetadata(trackID string) (*models.Track, error) {
-	// Try to get from first page (most recent tracks)
-	resp, err := c.FetchTracks(0, 100)
+	resp, err := c.FetchTracks("", 100)
 	if err != nil {
 		return nil, fmt.Errorf("fetch track metadata: %w", err)
 	}

@@ -73,6 +73,27 @@
 
 ---
 
+## Хотелки (Wishlist)
+
+### Lyrics Export
+- [ ] Скачивать тексты песен как `.txt` / `.lrc` рядом с аудиофайлом
+- [ ] Привязка по времени (timestamps) если есть в Suno API
+- [ ] Кнопка экспорта lyrics в WebUI
+
+### Selective Sync
+- [ ] `suno-archiver sync --limit 10` — скачать только N последних треков
+- [ ] `suno-archiver sync --newest 10` — только самые новые
+- [ ] `suno-archiver sync --workspace "name"` — только указанный workspace
+- [ ] Интерактивный режим: показать список, выбрать треки для скачивания
+
+### WebUI Improvements
+- [x] Кнопка копирования для промпта (стиля) и текста песни
+- [ ] Поиск по текстам песен (full-text search)
+- [ ] Bulk-действия: выделить несколько треков → анализ / скачивание / удаление
+- [ ] Тёмная тема (уже есть) + настройка акцентного цвета
+
+---
+
 ## Technical Debt & Infrastructure
 
 - [ ] Add proper test coverage for Python metrics

@@ -10,6 +10,14 @@
             const p = document.getElementById('ref-panel');
             p.style.display = p.style.display === 'none' ? 'block' : 'none';
         }
+        function copyText(id) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            navigator.clipboard.writeText(el.textContent).then(() => {
+                const btn = el.nextElementSibling;
+                if (btn) { btn.textContent = '✓'; setTimeout(() => { btn.textContent = '📋'; }, 1500); }
+            }).catch(() => {});
+        }
         function escapeHtml(s) {
             if (typeof s !== 'string') return String(s || '');
             return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -288,6 +296,12 @@
         .btn:hover { background: #30363d; }
         .btn-primary { background: #238636; border-color: #2ea043; color: #fff; }
         .btn-primary:hover { background: #2ea043; }
+        .btn-copy {
+            padding: 2px 8px; border: 1px solid #30363d; border-radius: 4px;
+            cursor: pointer; font-size: 12px; background: #21262d; color: #8b949e;
+            line-height: 1.4;
+        }
+        .btn-copy:hover { background: #30363d; color: #c9d1d9; }
 
         .tag { display: inline-block; padding: 2px 8px; background: #1f6feb22; color: #58a6ff; border-radius: 12px; font-size: 11px; }
         .badge-ws { display: inline-block; padding: 2px 6px; background: #30363d44; color: #8b949e; border-radius: 4px; font-size: 11px; }
@@ -379,13 +393,19 @@
             {{end}}
 
             <div class="section">
-                <h3>Промпт</h3>
-                <p>{{if .Prompt}}{{.Prompt}}{{else}}—{{end}}</p>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <h3 style="margin:0;">Промпт / Стиль</h3>
+                    {{if .Prompt}}<button class="btn-copy" onclick="copyText('copy-prompt')" title="Копировать">📋</button>{{end}}
+                </div>
+                <p>{{if .Prompt}}<span id="copy-prompt">{{.Prompt}}</span>{{else}}—{{end}}</p>
             </div>
 
             <div class="section">
-                <h3>Текст песни</h3>
-                <p>{{if .Lyrics}}{{.Lyrics}}{{else}}—{{end}}</p>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <h3 style="margin:0;">Текст песни</h3>
+                    {{if .Lyrics}}<button class="btn-copy" onclick="copyText('copy-lyrics')" title="Копировать">📋</button>{{end}}
+                </div>
+                <p>{{if .Lyrics}}<span id="copy-lyrics">{{.Lyrics}}</span>{{else}}—{{end}}</p>
             </div>
 
             <div class="section">
