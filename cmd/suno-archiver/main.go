@@ -82,6 +82,7 @@ and store everything in the local library.`,
 			fmt.Printf("  New tracks:         %d\n", stats.NewTracks)
 			fmt.Printf("  Updated tracks:     %d\n", stats.UpdatedTracks)
 			fmt.Printf("  Downloaded:         %d\n", stats.Downloaded)
+			fmt.Printf("  Lyrics exported:    %d\n", stats.LyricsExported)
 			if stats.Errors > 0 {
 				fmt.Printf("  Errors:             %d\n", stats.Errors)
 			}

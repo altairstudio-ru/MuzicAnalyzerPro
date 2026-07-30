@@ -24,8 +24,8 @@ func UpsertTrack(db *sql.DB, t *models.Track) error {
 	_, err = db.Exec(`
 		INSERT INTO tracks (id, title, artist, prompt, lyrics, tags, workspace,
 		                    duration, created_at, audio_path, audio_hash,
-		                    is_downloaded, file_size)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                    lyrics_path, is_downloaded, file_size)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			title         = excluded.title,
 			artist        = excluded.artist,
@@ -37,12 +37,13 @@ func UpsertTrack(db *sql.DB, t *models.Track) error {
 			created_at    = excluded.created_at,
 			audio_path    = excluded.audio_path,
 			audio_hash    = excluded.audio_hash,
+			lyrics_path   = excluded.lyrics_path,
 			is_downloaded = excluded.is_downloaded,
 			file_size     = excluded.file_size,
 			updated_at    = datetime('now')`,
 		t.ID, t.Title, t.Artist, t.Prompt, t.Lyrics, string(tagsJSON),
 		t.Workspace, t.Duration, t.CreatedAt, t.AudioPath, t.AudioHash,
-		dl, t.FileSize,
+		t.LyricsPath, dl, t.FileSize,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert track: %w", err)
@@ -55,7 +56,7 @@ func GetTrack(db *sql.DB, id string) (*models.Track, error) {
 	row := db.QueryRow(`
 		SELECT id, title, artist, prompt, lyrics, tags, workspace,
 		       duration, created_at, audio_path, audio_hash,
-		       is_downloaded, file_size
+		       lyrics_path, is_downloaded, file_size
 		FROM tracks WHERE id = ?`, id)
 
 	t := &models.Track{}
@@ -63,7 +64,7 @@ func GetTrack(db *sql.DB, id string) (*models.Track, error) {
 	var dl int
 	err := row.Scan(&t.ID, &t.Title, &t.Artist, &t.Prompt, &t.Lyrics,
 		&tagsJSON, &t.Workspace, &t.Duration, &t.CreatedAt,
-		&t.AudioPath, &t.AudioHash, &dl, &t.FileSize)
+		&t.AudioPath, &t.AudioHash, &t.LyricsPath, &dl, &t.FileSize)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -109,7 +110,7 @@ func ListTracks(db *sql.DB, filter models.TrackFilter) ([]models.Track, error) {
 
 	query := "SELECT id, title, artist, prompt, lyrics, tags, workspace, " +
 		"duration, created_at, audio_path, audio_hash, " +
-		"is_downloaded, file_size FROM tracks"
+		"lyrics_path, is_downloaded, file_size FROM tracks"
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -138,7 +139,7 @@ func ListTracks(db *sql.DB, filter models.TrackFilter) ([]models.Track, error) {
 		if err := rows.Scan(&t.ID, &t.Title, &t.Artist, &t.Prompt,
 			&t.Lyrics, &tagsJSON, &t.Workspace, &t.Duration,
 			&t.CreatedAt, &t.AudioPath, &t.AudioHash,
-			&dl, &t.FileSize); err != nil {
+			&t.LyricsPath, &dl, &t.FileSize); err != nil {
 			return nil, fmt.Errorf("scan track: %w", err)
 		}
 		t.IsDownloaded = dl == 1

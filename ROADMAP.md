@@ -75,10 +75,10 @@
 
 ## Хотелки (Wishlist)
 
-### Lyrics Export
-- [ ] Скачивать тексты песен как `.txt` / `.lrc` рядом с аудиофайлом
-- [ ] Привязка по времени (timestamps) если есть в Suno API
-- [ ] Кнопка экспорта lyrics в WebUI
+### Lyrics Export ✅
+- [x] Скачивать тексты песен как `.txt` рядом с аудиофайлом
+- [ ] Привязка по времени (timestamps) если есть в Suno API (LRC)
+- [x] Кнопка скачивания lyrics в WebUI
 
 ### Selective Sync
 - [ ] `suno-archiver sync --limit 10` — скачать только N последних треков

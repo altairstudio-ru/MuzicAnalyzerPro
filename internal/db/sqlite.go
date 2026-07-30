@@ -30,5 +30,8 @@ func Init(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
 
+	// Migrate existing databases: add lyrics_path if missing
+	db.Exec("ALTER TABLE tracks ADD COLUMN lyrics_path TEXT NOT NULL DEFAULT ''")
+
 	return db, nil
 }

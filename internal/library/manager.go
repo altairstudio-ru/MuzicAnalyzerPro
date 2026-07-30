@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/db"
@@ -107,6 +108,13 @@ func (m *Manager) Sync() (*models.SyncStats, error) {
 				track.FileSize = existing.FileSize
 			}
 
+			if track.Lyrics != "" && track.AudioPath != "" {
+				if lp, err := m.saveLyrics(track); err == nil {
+					track.LyricsPath = lp
+					stats.LyricsExported++
+				}
+			}
+
 			if err := db.UpsertTrack(m.DB, &track); err != nil {
 				stats.Errors++
 				continue
@@ -140,6 +148,15 @@ func (m *Manager) Sync() (*models.SyncStats, error) {
 	}
 
 	return stats, nil
+}
+
+// saveLyrics writes a track's lyrics to a .txt file next to the audio.
+func (m *Manager) saveLyrics(track models.Track) (string, error) {
+	lyricsPath := strings.TrimSuffix(track.AudioPath, filepath.Ext(track.AudioPath)) + ".txt"
+	if err := os.WriteFile(lyricsPath, []byte(track.Lyrics), 0644); err != nil {
+		return "", fmt.Errorf("save lyrics: %w", err)
+	}
+	return lyricsPath, nil
 }
 
 // downloadTrack downloads a track's audio file.

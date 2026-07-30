@@ -13,6 +13,7 @@ type Track struct {
 	CreatedAt    string   `json:"created_at"`
 	AudioPath    string   `json:"audio_path"`
 	AudioHash    string   `json:"audio_hash"`
+	LyricsPath   string   `json:"lyrics_path"`
 	IsDownloaded bool     `json:"is_downloaded"`
 	FileSize     int64    `json:"file_size"`
 }
@@ -36,9 +37,10 @@ type TrackFilter struct {
 
 // SyncStats holds statistics from a sync operation.
 type SyncStats struct {
-	TotalTracks   int `json:"total_tracks"`
-	NewTracks     int `json:"new_tracks"`
-	UpdatedTracks int `json:"updated_tracks"`
-	Downloaded    int `json:"downloaded"`
-	Errors        int `json:"errors"`
+	TotalTracks     int `json:"total_tracks"`
+	NewTracks       int `json:"new_tracks"`
+	UpdatedTracks   int `json:"updated_tracks"`
+	Downloaded      int `json:"downloaded"`
+	LyricsExported  int `json:"lyrics_exported"`
+	Errors          int `json:"errors"`
 }

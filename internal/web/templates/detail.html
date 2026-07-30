@@ -6,9 +6,61 @@
     <title>{{(index .Tracks 0).Title}} — Suno Archiver</title>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script>
-        function toggleRefPanel() {
+function toggleRefPanel() {
             const p = document.getElementById('ref-panel');
             p.style.display = p.style.display === 'none' ? 'block' : 'none';
+        }
+        function generateLyrics(id) {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = '⏳ Распознаю...';
+            fetch('/export-lyrics/' + id, { method: 'POST' })
+                .then(r => {
+                    if (!r.ok) {
+                        return r.text().then(t => { throw new Error(t || 'Failed') });
+                    }
+                    return r.blob();
+                })
+                .then(blob => {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'lyrics.txt';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    location.reload();
+                })
+                .catch(err => {
+                    alert('Ошибка: ' + err.message);
+                    btn.disabled = false;
+                    btn.textContent = '🎤 Текст из аудио';
+                });
+        }
+        function scrapeLyrics(id) {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = '⏳ Загружаю с Suno...';
+            fetch('/scrape-lyrics/' + id, { method: 'POST' })
+                .then(r => {
+                    if (!r.ok) {
+                        return r.text().then(t => { throw new Error(t || 'Failed') });
+                    }
+                    return r.blob();
+                })
+                .then(blob => {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'lyrics.txt';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    location.reload();
+                })
+                .catch(err => {
+                    alert('Ошибка: ' + err.message);
+                    btn.disabled = false;
+                    btn.textContent = '📥 Текст с Suno';
+                });
         }
         function copyText(id) {
             const el = document.getElementById(id);
@@ -392,20 +444,30 @@
             </div>
             {{end}}
 
-            <div class="section">
+<div class="section">
                 <div style="display:flex;align-items:center;gap:8px;">
-                    <h3 style="margin:0;">Промпт / Стиль</h3>
-                    {{if .Prompt}}<button class="btn-copy" onclick="copyText('copy-prompt')" title="Копировать">📋</button>{{end}}
+                    <h3 style="margin:0;">Текст песни</h3>
+                    {{if .Lyrics}}
+                    <button class="btn-copy" onclick="copyText('copy-lyrics')" title="Копировать">📋</button>
+                    <a href="/lyrics/{{.ID}}" class="btn-copy" download title="Скачать .txt">⬇</a>
+                    <button class="btn-copy" onclick="scrapeLyrics('{{.ID}}')" title="Загрузить текст с Suno">📥 Текст с Suno</button>
+                    {{else}}
+                    <button class="btn-copy" onclick="generateLyrics('{{.ID}}')" title="Сгенерировать из аудио (Whisper)">🎤 Текст из аудио</button>
+                    <button class="btn-copy" onclick="scrapeLyrics('{{.ID}}')" title="Загрузить текст с Suno">📥 Текст с Suno</button>
+                    {{end}}
                 </div>
+                <p>{{if .Lyrics}}<span id="copy-lyrics">{{.Lyrics}}</span>{{else}}—{{end}}</p>
+            </div>
                 <p>{{if .Prompt}}<span id="copy-prompt">{{.Prompt}}</span>{{else}}—{{end}}</p>
             </div>
 
             <div class="section">
                 <div style="display:flex;align-items:center;gap:8px;">
                     <h3 style="margin:0;">Текст песни</h3>
-                    {{if .Lyrics}}<button class="btn-copy" onclick="copyText('copy-lyrics')" title="Копировать">📋</button>{{end}}
+                    {{if .Lyrics}}<button class="btn-copy" onclick="copyText('copy-lyrics')" title="Копировать">📋</button>
+                    <a href="/lyrics/{{.ID}}" class="btn-copy" download title="Скачать .txt">⬇</a>{{else}}<button class="btn-copy" onclick="generateLyrics('{{.ID}}')" title="Распознать текст из аудио">🎤 Сгенерировать</button>{{end}}
                 </div>
-                <p>{{if .Lyrics}}<span id="copy-lyrics">{{.Lyrics}}</span>{{else}}—{{end}}</p>
+                <p>{{if .Lyrics}}<span id="copy-lyrics">{{.Lyrics}}</span>{{else}}<span style="color:#8b949e">— текст не загружен. Нажмите кнопку выше для распознавания из аудио —</span>{{end}}</p>
             </div>
 
             <div class="section">

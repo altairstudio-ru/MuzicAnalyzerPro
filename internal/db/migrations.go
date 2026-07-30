@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS tracks (
     created_at    TEXT NOT NULL DEFAULT '',
     audio_path    TEXT NOT NULL DEFAULT '',
     audio_hash    TEXT NOT NULL DEFAULT '',
+    lyrics_path   TEXT NOT NULL DEFAULT '',
     is_downloaded INTEGER NOT NULL DEFAULT 0,
     file_size     INTEGER NOT NULL DEFAULT 0,
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))

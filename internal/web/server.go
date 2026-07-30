@@ -1,9 +1,11 @@
 package web
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"io"
 	"log"
@@ -11,6 +13,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -18,6 +22,7 @@ import (
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/analyzer"
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/db"
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/library"
+	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/scraper"
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/pkg/models"
 )
 
@@ -26,11 +31,14 @@ var templateFS embed.FS
 
 // Server is the web UI server.
 type Server struct {
-	Router   *chi.Mux
-	Manager  *library.Manager
-	DB       *sql.DB
-	Tmpl     *template.Template
-	Analyzer *analyzer.Analyzer
+	Router      *chi.Mux
+	Manager     *library.Manager
+	DB          *sql.DB
+	Tmpl        *template.Template
+	Analyzer    *analyzer.Analyzer
+	scraperCfg  scraper.ScrapeConfig
+	scraper     *scraper.SunoScraper
+	scraperMu   sync.Mutex
 }
 
 // pageData holds common data available to all templates.
@@ -52,15 +60,21 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 		return nil, err
 	}
 
-	pythonBin := ".venv/bin/python3"
-	anz := analyzer.New(mgr.DB, pythonBin)
+	// Use absolute path for Python venv
+	venvPath, _ := filepath.Abs(".venv/bin/python3")
+	anz := analyzer.New(mgr.DB, venvPath)
+
+	// Scraper config (lazy init)
+	scraperCfg := scraper.DefaultScrapeConfig()
+	scraperCfg.AuthToken = mgr.Config.Suno.AuthToken
 
 	s := &Server{
-		Router:   chi.NewRouter(),
-		Manager:  mgr,
-		DB:       mgr.DB,
-		Tmpl:     tmpl,
-		Analyzer: anz,
+		Router:      chi.NewRouter(),
+		Manager:     mgr,
+		DB:          mgr.DB,
+		Tmpl:        tmpl,
+		Analyzer:    anz,
+		scraperCfg:  scraperCfg,
 	}
 
 	s.Router.Use(middleware.Logger)
@@ -70,6 +84,8 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 	s.Router.Get("/tracks/{id}", s.trackDetail)
 	s.Router.Post("/sync", s.triggerSync)
 	s.Router.Get("/audio/{id}", s.serveAudio)
+	s.Router.Get("/lyrics/{id}", s.serveLyrics)
+	s.Router.Post("/export-lyrics/{id}", s.exportLyrics)
 	s.Router.Post("/api/auth", s.authHandler)
 	s.Router.Options("/api/auth", s.authCORS)
 	s.Router.Get("/api/health", s.healthHandler)
@@ -78,6 +94,7 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 	s.Router.Post("/compare/upload/{id}", s.compareUpload)
 	s.Router.Post("/compare/select/{id}", s.compareSelect)
 	s.Router.Get("/plots/*", s.servePlot)
+	s.Router.Post("/scrape-lyrics/{id}", s.scrapeLyricsHandler)
 
 	return s, nil
 }
@@ -174,6 +191,116 @@ func (s *Server) serveAudio(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Accept-Ranges", "bytes")
 	http.ServeFile(w, r, track.AudioPath)
+}
+
+// exportLyrics runs Whisper transcription and saves it as lyrics.
+func (s *Server) exportLyrics(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	track, err := db.GetTrack(s.DB, id)
+	if err != nil || track == nil {
+		http.Error(w, "Track not found", http.StatusNotFound)
+		return
+	}
+	if !track.IsDownloaded || track.AudioPath == "" {
+		http.Error(w, "Audio not available", http.StatusBadRequest)
+		return
+	}
+
+	// Run analysis with just whisper metric
+	result, err := s.Analyzer.Analyze(id, track.AudioPath, []string{"whisper"}, track.Lyrics)
+	if err != nil {
+		http.Error(w, "Analysis failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Extract transcription from whisper results
+	var transcription string
+	if resultJSON, ok := result.Results["whisper"]; ok {
+		if whisperMap, ok := resultJSON.(map[string]any); ok {
+			if fullText, ok := whisperMap["full_text"].(string); ok && fullText != "" {
+				transcription = fullText
+			}
+		}
+	}
+
+	if transcription == "" {
+		http.Error(w, "No transcription generated", http.StatusInternalServerError)
+		return
+	}
+
+	// Save lyrics file
+	lyricsPath := strings.TrimSuffix(track.AudioPath, filepath.Ext(track.AudioPath)) + ".txt"
+	if err := os.WriteFile(lyricsPath, []byte(transcription), 0644); err != nil {
+		http.Error(w, "Failed to save lyrics: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Update track in DB
+	track.LyricsPath = lyricsPath
+	track.Lyrics = transcription // Also update in-memory for immediate use
+	if err := db.UpsertTrack(s.DB, track); err != nil {
+		http.Error(w, "DB update failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Serve the file
+	downloadName := sanitizeFilename(track.Title)
+	if downloadName == "" {
+		downloadName = track.ID
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.txt"`, downloadName))
+	http.ServeFile(w, r, lyricsPath)
+}
+
+// serveLyrics serves a track's lyrics file for download.
+func (s *Server) serveLyrics(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	track, err := db.GetTrack(s.DB, id)
+	if err != nil || track == nil {
+		http.Error(w, "Track not found", http.StatusNotFound)
+		return
+	}
+
+	if track.LyricsPath != "" {
+		if fi, err := os.Stat(track.LyricsPath); err == nil && !fi.IsDir() {
+			downloadName := sanitizeFilename(track.Title)
+			if downloadName == "" {
+				downloadName = track.ID
+			}
+			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.txt"`, downloadName))
+			http.ServeFile(w, r, track.LyricsPath)
+			return
+		}
+	}
+
+	if track.Lyrics != "" {
+		downloadName := sanitizeFilename(track.Title)
+		if downloadName == "" {
+			downloadName = track.ID
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.txt"`, downloadName))
+		w.Write([]byte(track.Lyrics))
+		return
+	}
+
+	http.Error(w, "No lyrics available", http.StatusNotFound)
+}
+
+func sanitizeFilename(name string) string {
+	if name == "" {
+		return name
+	}
+	result := make([]byte, 0, len(name))
+	for _, c := range []byte(name) {
+		if c == '/' || c == '\\' || c == '\x00' {
+			result = append(result, '_')
+		} else {
+			result = append(result, c)
+		}
+	}
+	return string(result)
 }
 
 // triggerAnalyze starts analysis for a track.
@@ -310,6 +437,85 @@ func (s *Server) analyzeWithReference(w http.ResponseWriter, r *http.Request, id
 
 	w.Header().Set("HX-Redirect", "/tracks/"+id)
 	w.WriteHeader(http.StatusOK)
+}
+
+// scrapeLyricsHandler scrapes lyrics and metadata from Suno track page using Lightpanda.
+func (s *Server) scrapeLyricsHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	track, err := db.GetTrack(s.DB, id)
+	if err != nil || track == nil {
+		http.Error(w, "Track not found", http.StatusNotFound)
+		return
+	}
+
+	// Lazy init scraper
+	s.scraperMu.Lock()
+	if s.scraper == nil {
+		scraper := scraper.NewSunoScraper(s.scraperCfg)
+		ctx := context.Background()
+		if err := scraper.Start(ctx); err != nil {
+			log.Printf("[scraper] failed to start: %v", err)
+		}
+		s.scraper = scraper
+	}
+	scraper := s.scraper
+	s.scraperMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+
+	meta, err := scraper.ScrapeTrack(ctx, id)
+	if err != nil {
+		http.Error(w, "Scraping failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if meta.Error != "" {
+		http.Error(w, "Scraping error: "+meta.Error, http.StatusInternalServerError)
+		return
+	}
+
+	// Save lyrics file if we got lyrics
+	lyricsPath := ""
+	if meta.Lyrics != "" && track.AudioPath != "" {
+		lyricsPath = strings.TrimSuffix(track.AudioPath, filepath.Ext(track.AudioPath)) + ".txt"
+		if err := os.WriteFile(lyricsPath, []byte(meta.Lyrics), 0644); err != nil {
+			log.Printf("[scraper] failed to save lyrics: %v", err)
+		}
+	}
+
+	// Update track in DB
+	if meta.Lyrics != "" {
+		track.Lyrics = meta.Lyrics
+		track.LyricsPath = lyricsPath
+	}
+	if meta.Prompt != "" && track.Prompt == "" {
+		track.Prompt = meta.Prompt
+	}
+	if len(meta.Tags) > 0 && len(track.Tags) == 0 {
+		track.Tags = meta.Tags
+	}
+	if meta.Title != "" && track.Title == "" {
+		track.Title = meta.Title
+	}
+	if meta.Artist != "" && track.Artist == "" {
+		track.Artist = meta.Artist
+	}
+
+	if err := db.UpsertTrack(s.DB, track); err != nil {
+		log.Printf("[scraper] failed to update track: %v", err)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"success":     true,
+		"lyrics":      meta.Lyrics,
+		"prompt":      meta.Prompt,
+		"tags":        meta.Tags,
+		"title":       meta.Title,
+		"artist":      meta.Artist,
+		"lyrics_path": lyricsPath,
+	})
 }
 
 // servePlot serves comparison plot images.
