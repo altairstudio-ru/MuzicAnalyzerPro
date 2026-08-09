@@ -22,8 +22,12 @@ type Config struct {
 
 // SunoConfig holds Suno-specific configuration.
 type SunoConfig struct {
-	AuthToken string `yaml:"auth_token"`
-	BasePath  string `yaml:"base_path"`
+	AuthToken     string `yaml:"auth_token"`
+	SessionCookie string `yaml:"session_cookie"`
+	BasePath      string `yaml:"base_path"`
+	// AudioBasePath optionally overrides where audio files are stored.
+	// Defaults to BasePath when empty.
+	AudioBasePath string `yaml:"audio_base_path"`
 }
 
 // LoadConfig loads configuration from the config file.
@@ -93,7 +97,11 @@ func (cfg *Config) DBPath() string {
 
 // AudioDir returns the path to the audio storage directory.
 func (cfg *Config) AudioDir() string {
-	return filepath.Join(expandPath(cfg.Suno.BasePath), audioDirName)
+	base := cfg.Suno.AudioBasePath
+	if base == "" {
+		base = cfg.Suno.BasePath
+	}
+	return filepath.Join(expandPath(base), audioDirName)
 }
 
 // WorkspaceAudioDir returns the path for a specific workspace's audio files.

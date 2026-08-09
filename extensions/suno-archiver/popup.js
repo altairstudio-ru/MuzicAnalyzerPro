@@ -18,6 +18,7 @@ const tokenSourceEl = document.getElementById('token-source');
 const guidanceEl = document.getElementById('guidance');
 
 let currentToken = null;
+let currentSessionCookie = null;
 let tokenKey = null;
 let tokenSent = false;
 
@@ -35,17 +36,20 @@ function setStatus(className, text) {
   }
 }
 
-function showToken(key, token) {
-  currentToken = token;
+function showToken(key, token, isSession) {
+  currentToken = isSession ? '' : token;
+  currentSessionCookie = isSession ? token : '';
   tokenKey = key;
   tokenSection.style.display = 'block';
-  tokenDisplay.textContent = token.substring(0, 24) + '...' + token.slice(-8);
+  const displayToken = token.substring(0, 24) + '...' + token.slice(-8);
+  tokenDisplay.textContent = displayToken + (isSession ? ' (session cookie)' : ' (JWT)');
   sendBtn.disabled = false;
-  tokenSourceEl.textContent = 'Источник: ' + key;
+  tokenSourceEl.textContent = 'Источник: ' + key + (isSession ? ' [session]' : ' [JWT]');
 }
 
 function hideToken() {
   currentToken = null;
+  currentSessionCookie = null;
   tokenKey = null;
   tokenSection.style.display = 'none';
   sendBtn.disabled = true;
@@ -70,19 +74,53 @@ async function checkLocalApp() {
   }
 }
 
-async function sendToken(token) {
+// Read the __session cookie via chrome.cookies API (can read HttpOnly cookies,
+// which content scripts cannot access through document.cookie).
+function getSessionCookie() {
+  return new Promise((resolve) => {
+    const urls = ['https://suno.com', 'https://auth.suno.com'];
+    const names = ['__session', '__clerk_client_jwt'];
+    let found = null;
+
+    let pending = urls.length * names.length;
+    if (pending === 0) { resolve(null); return; }
+
+    const checkDone = () => {
+      pending--;
+      if (pending <= 0) resolve(found);
+    };
+
+    for (const url of urls) {
+      for (const name of names) {
+        chrome.cookies.get({ url, name }, (cookie) => {
+          if (chrome.runtime.lastError) { checkDone(); return; }
+          if (cookie && cookie.value && !found) {
+            found = { name, value: cookie.value, domain: cookie.domain };
+          }
+          checkDone();
+        });
+      }
+    }
+  });
+}
+
+async function sendAuth(token, sessionCookie) {
   sendBtn.textContent = '⏳ Отправка...';
   sendBtn.disabled = true;
   try {
+    const body = {};
+    if (token) body.token = token;
+    if (sessionCookie) body.session_cookie = sessionCookie;
+    
     const resp = await fetch(AUTH_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(5000),
     });
     if (resp.ok) {
       const data = await resp.json().catch(() => ({}));
-      setStatus('connected', data.message || '✓ Токен отправлен!');
+      setStatus('connected', data.message || '✓ Auth отправлен!');
       tokenSent = true;
       return true;
     } else {
@@ -95,7 +133,7 @@ async function sendToken(token) {
     return false;
   } finally {
     sendBtn.textContent = '📤 Отправить токен';
-    sendBtn.disabled = currentToken === null;
+    sendBtn.disabled = currentToken === null && currentSessionCookie === null;
   }
 }
 
@@ -155,7 +193,13 @@ checkLocalApp().then((appRunning) => {
       response = await queryToken(tab.id);
     }
 
-    if (!response || !response.token) {
+    // Read __session cookie via chrome.cookies API (handles HttpOnly cookies)
+    const sessionCookie = await getSessionCookie();
+
+    const contentToken = (response && response.token) || '';
+    const contentSession = (response && response.sessionCookie) || '';
+
+    if (!contentToken && !contentSession && !sessionCookie) {
       setStatus('unknown', 'Токен не найден — войдите в Suno');
       hideToken();
       // Show debug section when token not found
@@ -163,14 +207,23 @@ checkLocalApp().then((appRunning) => {
       return;
     }
 
-    // Token found!
-    setStatus('connected', '✓ Токен найден');
-    showToken(response.key || 'clerk-session', response.token);
+    // Prefer the real __session cookie from chrome.cookies (most reliable),
+    // then fall back to content-script values.
+    const finalSession = sessionCookie ? sessionCookie.value : (contentSession || '');
+    const finalToken = contentToken || '';
+
+    setStatus('connected', '✓ Auth найден');
+    const key = sessionCookie
+      ? `cookie:${sessionCookie.name} (${sessionCookie.domain})`
+      : (response && response.key) || 'clerk-session';
+    const displayVal = finalSession || finalToken;
+    const isSession = !!finalSession;
+    showToken(key, displayVal, isSession);
 
     // Auto-send if enabled
     if (autoCheckbox.checked && !tokenSent) {
-      console.log('[Suno Archiver] Auto-sending token from popup...');
-      sendToken(response.token);
+      console.log('[Suno Archiver] Auto-sending auth from popup...');
+      sendAuth(finalToken, finalSession);
     }
   });
 });
@@ -178,8 +231,8 @@ checkLocalApp().then((appRunning) => {
 // —— Event handlers ——
 
 sendBtn.addEventListener('click', () => {
-  if (currentToken) {
-    sendToken(currentToken);
+  if (currentToken || currentSessionCookie) {
+    sendAuth(currentToken, currentSessionCookie);
   }
 });
 
@@ -230,6 +283,10 @@ document.getElementById('debug-toggle').addEventListener('click', async () => {
       }
       if (resp.storage.cookieNames.length === 0) out += '  (пусто)\n';
       out += `\ntoken found: ${resp.found ? resp.found.key : '✗'}\n`;
+
+      // Show __session cookie from chrome.cookies API
+      const cookie = await getSessionCookie();
+      out += `\nchrome.cookies __session: ${cookie ? `✓ ${cookie.name}@${cookie.domain}` : '✗ не найден'}\n`;
 
       // Show detected API endpoints
       if (resp.apiEndpoints && resp.apiEndpoints.length > 0) {

@@ -69,7 +69,7 @@ func (c *Client) downloadWithAuth(url, destination string) error {
 		return err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.authToken)
+	req.Header.Set("Authorization", "Bearer "+c.getAuthToken())
 	req.Header.Set("User-Agent", userAgent)
 
 	resp, err := c.httpClient.Do(req)

@@ -28,8 +28,15 @@ function findClerkJWT() {
   for (const key of CLERK_KEYS) {
     try {
       const val = localStorage.getItem(key);
-      if (val && typeof val === 'string' && val.startsWith('ey')) {
-        return { key, token: val };
+      if (val && typeof val === 'string') {
+        // For __session, accept any non-empty value (not just JWTs)
+        if (key === '__session' && val.length > 0) {
+          return { key, token: val, isSession: true };
+        }
+        // For other keys, only accept JWTs (starting with 'ey')
+        if (val.startsWith('ey')) {
+          return { key, token: val, isSession: false };
+        }
       }
     } catch {
       continue;
@@ -45,19 +52,19 @@ function findClerkJWT() {
       if (val && typeof val === 'string') {
         // Try the value directly
         if (val.startsWith('ey')) {
-          return { key, token: val };
+          return { key, token: val, isSession: false };
         }
         // Try parsing as JSON (Clerk sometimes wraps in an object)
         try {
           const parsed = JSON.parse(val);
           if (typeof parsed === 'string' && parsed.startsWith('ey')) {
-            return { key, token: parsed };
+            return { key, token: parsed, isSession: false };
           }
           if (parsed && typeof parsed === 'object') {
             // Check common JWT fields
             for (const field of ['jwt', 'token', 'accessToken', 'access_token', 'session', 'idToken']) {
               if (typeof parsed[field] === 'string' && parsed[field].startsWith('ey')) {
-                return { key: `${key}.${field}`, token: parsed[field] };
+                return { key: `${key}.${field}`, token: parsed[field], isSession: false };
               }
             }
           }
@@ -77,11 +84,12 @@ function findClerkJWT() {
       const parts = cookie.trim().split('=');
       if (parts.length < 2) continue;
       const name = parts[0].trim();
-      if (name.includes('__session') || name.includes('clerk') || name.includes('token')) {
-        const val = decodeURIComponent(parts.slice(1).join('='));
-        if (val.startsWith('ey')) {
-          return { key: `cookie:${name}`, token: val };
-        }
+      const val = decodeURIComponent(parts.slice(1).join('='));
+      if (name === '__session' && val.length > 0) {
+        return { key: `cookie:${name}`, token: val, isSession: true };
+      }
+      if ((name.includes('__session') || name.includes('clerk') || name.includes('token')) && val.startsWith('ey')) {
+        return { key: `cookie:${name}`, token: val, isSession: false };
       }
     }
   } catch {
@@ -130,20 +138,24 @@ async function isAppRunning() {
   }
 }
 
-// Send token to the local app.
-async function sendToken(token) {
+// Send token and/or session cookie to the local app.
+async function sendAuth(token, sessionCookie) {
   try {
+    const body = {};
+    if (token) body.token = token;
+    if (sessionCookie) body.session_cookie = sessionCookie;
+    
     const resp = await fetch(AUTH_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(5000),
     });
     if (resp.ok) {
-      console.log('[Suno Archiver] ✓ Token sent successfully');
+      console.log('[Suno Archiver] ✓ Auth sent successfully');
       return true;
     } else {
-      console.warn('[Suno Archiver] Token send failed:', resp.status);
+      console.warn('[Suno Archiver] Auth send failed:', resp.status);
       return false;
     }
   } catch (err) {
@@ -152,14 +164,14 @@ async function sendToken(token) {
   }
 }
 
-// Try to send token, retrying if the app is offline.
+// Try to send auth, retrying if the app is offline.
 async function tryAutoSend() {
   const result = findClerkJWT();
   if (!result) {
-    console.log('[Suno Archiver] No Clerk JWT found on page');
+    console.log('[Suno Archiver] No Clerk auth found on page');
     return;
   }
-  console.log('[Suno Archiver] Found Clerk JWT (key:', result.key, ')');
+  console.log('[Suno Archiver] Found Clerk auth (key:', result.key, ', isSession:', result.isSession, ')');
 
   const data = await chrome.storage.sync.get([STORAGE_KEY_AUTO]);
   const autoSend = data[STORAGE_KEY_AUTO];
@@ -168,8 +180,11 @@ async function tryAutoSend() {
     return;
   }
 
+  const token = result.isSession ? '' : result.token;
+  const sessionCookie = result.isSession ? result.token : '';
+
   // Try immediately
-  const ok = await sendToken(result.token);
+  const ok = await sendAuth(token, sessionCookie);
   if (ok) return;
 
   // Retry if app offline
@@ -181,7 +196,7 @@ async function tryAutoSend() {
       return;
     }
     if (!(await isAppRunning())) return;
-    if (await sendToken(result.token)) {
+    if (await sendAuth(token, sessionCookie)) {
       clearInterval(retryInterval);
     }
   }, 5000);
@@ -232,23 +247,35 @@ tryAutoSend();
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'getToken') {
-    sendResponse(findClerkJWT());
+    const result = findClerkJWT();
+    if (result) {
+      sendResponse({
+        key: result.key,
+        token: result.isSession ? '' : result.token,
+        sessionCookie: result.isSession ? result.token : '',
+      });
+    } else {
+      sendResponse({ key: null, token: null, sessionCookie: null });
+    }
     return true;
   }
 
   if (request.action === 'sendToken') {
     const result = findClerkJWT();
     if (result) {
-      sendToken(result.token).then((ok) => sendResponse({ ok }));
+      const token = result.isSession ? '' : result.token;
+      const sessionCookie = result.isSession ? result.token : '';
+      sendAuth(token, sessionCookie).then((ok) => sendResponse({ ok }));
     } else {
-      sendResponse({ ok: false, error: 'No Clerk JWT found' });
+      sendResponse({ ok: false, error: 'No Clerk auth found' });
     }
     return true;
   }
 
   if (request.action === 'debug') {
+    const result = findClerkJWT();
     sendResponse({
-      found: findClerkJWT(),
+      found: result ? { key: result.key, isSession: result.isSession } : null,
       storage: debugStorage(),
       apiEndpoints: getDetectedEndpoints(),
     });

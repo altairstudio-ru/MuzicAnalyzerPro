@@ -154,6 +154,39 @@ func ListTracks(db *sql.DB, filter models.TrackFilter) ([]models.Track, error) {
 	return tracks, rows.Err()
 }
 
+// GetAllTracks returns every track in the database.
+func GetAllTracks(db *sql.DB) ([]models.Track, error) {
+	rows, err := db.Query("SELECT id, title, artist, prompt, lyrics, tags, workspace, " +
+		"duration, created_at, audio_path, audio_hash, " +
+		"lyrics_path, is_downloaded, file_size FROM tracks")
+	if err != nil {
+		return nil, fmt.Errorf("get all tracks: %w", err)
+	}
+	defer rows.Close()
+
+	var tracks []models.Track
+	for rows.Next() {
+		t := models.Track{}
+		var tagsJSON string
+		var dl int
+		if err := rows.Scan(&t.ID, &t.Title, &t.Artist, &t.Prompt,
+			&t.Lyrics, &tagsJSON, &t.Workspace, &t.Duration,
+			&t.CreatedAt, &t.AudioPath, &t.AudioHash,
+			&t.LyricsPath, &dl, &t.FileSize); err != nil {
+			return nil, fmt.Errorf("scan track: %w", err)
+		}
+		t.IsDownloaded = dl == 1
+		if err := json.Unmarshal([]byte(tagsJSON), &t.Tags); err != nil {
+			t.Tags = []string{}
+		}
+		tracks = append(tracks, t)
+	}
+	if tracks == nil {
+		tracks = []models.Track{}
+	}
+	return tracks, rows.Err()
+}
+
 // DeleteTrack removes a track by its ID.
 func DeleteTrack(db *sql.DB, id string) error {
 	_, err := db.Exec("DELETE FROM tracks WHERE id = ?", id)

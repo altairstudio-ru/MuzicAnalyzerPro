@@ -16,8 +16,9 @@ type TrackMeta struct {
 
 // ScrapeConfig configures the scraper behavior.
 type ScrapeConfig struct {
-	CDPEndpoint  string        // e.g., "ws://localhost:9222"
-	AuthToken    string        // Clerk JWT for authentication
+	CDPEndpoint  string        // e.g., "ws://127.0.0.1:9222"
+	AuthToken    string        // Clerk JWT (access token)
+	SessionCookie string       // Clerk session cookie from browser localStorage (__session)
 	DelayBetween time.Duration // pause between requests
 	Timeout      time.Duration // per-request timeout
 	Headless     bool          // run in headless mode
@@ -27,7 +28,7 @@ type ScrapeConfig struct {
 // DefaultScrapeConfig returns a sensible default configuration.
 func DefaultScrapeConfig() ScrapeConfig {
 	return ScrapeConfig{
-		CDPEndpoint:  "ws://localhost:9222",
+		CDPEndpoint:  "ws://127.0.0.1:9222",
 		DelayBetween: 3 * time.Second,
 		Timeout:      30 * time.Second,
 		Headless:     true,

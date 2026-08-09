@@ -65,7 +65,10 @@ function toggleRefPanel() {
         function copyText(id) {
             const el = document.getElementById(id);
             if (!el) return;
-            navigator.clipboard.writeText(el.textContent).then(() => {
+            const clone = el.cloneNode(true);
+            clone.querySelectorAll('br').forEach(br => br.replaceWith('\n'));
+            const text = clone.textContent.replace(/\n+$/g, '').trim();
+            navigator.clipboard.writeText(text).then(() => {
                 const btn = el.nextElementSibling;
                 if (btn) { btn.textContent = '✓'; setTimeout(() => { btn.textContent = '📋'; }, 1500); }
             }).catch(() => {});
@@ -450,25 +453,21 @@ function toggleRefPanel() {
                     {{if .Lyrics}}
                     <button class="btn-copy" onclick="copyText('copy-lyrics')" title="Копировать">📋</button>
                     <a href="/lyrics/{{.ID}}" class="btn-copy" download title="Скачать .txt">⬇</a>
+                    {{end}}
                     <button class="btn-copy" onclick="scrapeLyrics('{{.ID}}')" title="Загрузить текст с Suno">📥 Текст с Suno</button>
-                    {{else}}
+                    {{if not .Lyrics}}
                     <button class="btn-copy" onclick="generateLyrics('{{.ID}}')" title="Сгенерировать из аудио (Whisper)">🎤 Текст из аудио</button>
-                    <button class="btn-copy" onclick="scrapeLyrics('{{.ID}}')" title="Загрузить текст с Suno">📥 Текст с Suno</button>
                     {{end}}
                 </div>
-                <p>{{if .Lyrics}}<span id="copy-lyrics">{{.Lyrics}}</span>{{else}}—{{end}}</p>
-            </div>
-                <p>{{if .Prompt}}<span id="copy-prompt">{{.Prompt}}</span>{{else}}—{{end}}</p>
+                <p>{{if .Lyrics}}<span id="copy-lyrics">{{.Lyrics | formatLyrics}}</span>{{else}}<span style="color:#8b949e">— текст не загружен. Нажмите кнопку выше для распознавания из аудио —</span>{{end}}</p>
             </div>
 
+            {{if and .Prompt (ne .Prompt .Lyrics)}}
             <div class="section">
-                <div style="display:flex;align-items:center;gap:8px;">
-                    <h3 style="margin:0;">Текст песни</h3>
-                    {{if .Lyrics}}<button class="btn-copy" onclick="copyText('copy-lyrics')" title="Копировать">📋</button>
-                    <a href="/lyrics/{{.ID}}" class="btn-copy" download title="Скачать .txt">⬇</a>{{else}}<button class="btn-copy" onclick="generateLyrics('{{.ID}}')" title="Распознать текст из аудио">🎤 Сгенерировать</button>{{end}}
-                </div>
-                <p>{{if .Lyrics}}<span id="copy-lyrics">{{.Lyrics}}</span>{{else}}<span style="color:#8b949e">— текст не загружен. Нажмите кнопку выше для распознавания из аудио —</span>{{end}}</p>
+                <h3>Промпт</h3>
+                <p>{{if .Prompt}}<span id="copy-prompt">{{.Prompt}}</span>{{else}}—{{end}}</p>
             </div>
+            {{end}}
 
             <div class="section">
                 <h3>Метаданные</h3>

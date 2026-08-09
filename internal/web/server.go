@@ -55,10 +55,10 @@ type pageData struct {
 
 // NewServer creates a new web server with the given library manager.
 func NewServer(mgr *library.Manager) (*Server, error) {
-	tmpl, err := template.ParseFS(templateFS, "templates/*.html")
-	if err != nil {
-		return nil, err
+	funcMap := template.FuncMap{
+		"formatLyrics": formatLyrics,
 	}
+	tmpl := template.Must(template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html"))
 
 	// Use absolute path for Python venv
 	venvPath, _ := filepath.Abs(".venv/bin/python3")
@@ -67,6 +67,7 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 	// Scraper config (lazy init)
 	scraperCfg := scraper.DefaultScrapeConfig()
 	scraperCfg.AuthToken = mgr.Config.Suno.AuthToken
+	scraperCfg.SessionCookie = mgr.Config.Suno.SessionCookie
 
 	s := &Server{
 		Router:      chi.NewRouter(),
@@ -544,7 +545,8 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 
 // authHandler receives a Clerk JWT from the browser extension.
 type authRequest struct {
-	Token string `json:"token"`
+	Token          string `json:"token"`
+	SessionCookie  string `json:"session_cookie"`
 }
 
 func (s *Server) authHandler(w http.ResponseWriter, r *http.Request) {
@@ -553,26 +555,46 @@ func (s *Server) authHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
-	if req.Token == "" {
-		http.Error(w, "token is required", http.StatusBadRequest)
+
+	cfg := s.Manager.Config
+	updated := false
+
+	if req.Token != "" {
+		cfg.Suno.AuthToken = req.Token
+		s.Manager.Suno.SetAuthToken(req.Token)
+		updated = true
+	}
+	if req.SessionCookie != "" {
+		cfg.Suno.SessionCookie = req.SessionCookie
+		s.Manager.SetAuthToken(req.SessionCookie)
+		// Also update scraper config if already initialized
+		s.scraperMu.Lock()
+		if s.scraper != nil {
+			s.scraper.SetSessionCookie(req.SessionCookie)
+		}
+		s.scraperCfg.SessionCookie = req.SessionCookie
+		s.scraperMu.Unlock()
+		updated = true
+	}
+
+	if !updated {
+		http.Error(w, "token or session_cookie is required", http.StatusBadRequest)
 		return
 	}
 
-	// Save token to config
-	cfg := s.Manager.Config
-	cfg.Suno.AuthToken = req.Token
 	if err := library.SaveConfig(cfg); err != nil {
 		log.Printf("Save config error: %v", err)
-		http.Error(w, "failed to save token", http.StatusInternalServerError)
+		http.Error(w, "failed to save config", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("Auth token received and saved from extension")
+	log.Printf("Auth config received and saved from extension (token: %v, session_cookie: %v)",
+		req.Token != "", req.SessionCookie != "")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":  "ok",
-		"message": "✓ Auth token saved. Run 'suno-archiver sync' to start downloading.",
+		"message": "✓ Auth config saved. Run 'suno-archiver sync' to start downloading.",
 	})
 }
 
@@ -603,4 +625,14 @@ func (s *Server) ListenAndServe(addr string) error {
 	}
 	log.Printf("Web UI: http://localhost%s", addr)
 	return http.ListenAndServe(addr, s.Router)
+}
+
+// formatLyrics formats lyrics text for HTML display, preserving line breaks.
+func formatLyrics(text string) template.HTML {
+	if text == "" {
+		return ""
+	}
+	// Escape HTML, then replace newlines with <br>
+	escaped := template.HTMLEscapeString(text)
+	return template.HTML(strings.ReplaceAll(escaped, "\n", "<br>"))
 }

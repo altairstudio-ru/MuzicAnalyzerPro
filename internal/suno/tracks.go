@@ -1,11 +1,11 @@
 package suno
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/pkg/models"
 )
@@ -26,6 +26,8 @@ type apiTrack struct {
 	TagsArray       []any  `json:"tags_array"`     // if it comes as array
 	WorkspaceName   string `json:"workspace_name"`
 	Workspace       string `json:"workspace"`      // sometimes nested
+	Project         apiProject `json:"project"`    // v3 API: project (a.k.a. workspace)
+	Albums          []apiAlbum `json:"albums"`     // v3 API: albums the track belongs to
 	Duration        int    `json:"duration"`
 	CreatedAt       string `json:"created_at"`
 	CreatedAtRaw    string `json:"createdAt"`      // alternative casing
@@ -60,6 +62,22 @@ type TrackMetadata struct {
 	Prompt string `json:"prompt"`
 }
 
+// apiProject is the v3 API's project object — the new name for a workspace.
+type apiProject struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	IsTrashed   bool   `json:"is_trashed"`
+	IsPublic    bool   `json:"is_public"`
+}
+
+// apiAlbum is a Suno album the track belongs to.
+type apiAlbum struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
 // FetchTracksResponse is the paginated response from the feed v3 endpoint.
 type FetchTracksResponse struct {
 	Tracks  []models.Track `json:"tracks"`
@@ -83,7 +101,7 @@ func (c *Client) FetchTracks(cursor string, pageSize int) (*FetchTracksResponse,
 	}
 
 	bodyBytes, _ := json.Marshal(bodyData)
-	resp, err := c.doRequest("POST", path, bytes.NewReader(bodyBytes))
+	resp, err := c.doRequest("POST", path, bodyBytes)
 	if err != nil {
 		return nil, fmt.Errorf("fetch tracks: %w", err)
 	}
@@ -113,9 +131,25 @@ func (c *Client) FetchTracks(cursor string, pageSize int) (*FetchTracksResponse,
 
 // FetchAllTracks retrieves ALL tracks by paginating through the feed using cursor.
 func (c *Client) FetchAllTracks() ([]models.Track, error) {
+	return c.fetchTracksUntil(nil)
+}
+
+// FetchTracksForIDs paginates through the feed (with a small inter-page delay)
+// and returns tracks whose IDs are in the `wanted` set. Stops early once every
+// wanted ID has been found, reducing the number of requests. Unknown IDs are
+// simply absent from the result.
+func (c *Client) FetchTracksForIDs(wanted map[string]bool) ([]models.Track, error) {
+	if len(wanted) == 0 {
+		return nil, nil
+	}
+	return c.fetchTracksUntil(wanted)
+}
+
+func (c *Client) fetchTracksUntil(wanted map[string]bool) ([]models.Track, error) {
 	var allTracks []models.Track
 	cursor := ""
-	pageSize := 50
+	pageSize := 200
+	found := map[string]bool{}
 
 	for {
 		resp, err := c.FetchTracks(cursor, pageSize)
@@ -124,10 +158,25 @@ func (c *Client) FetchAllTracks() ([]models.Track, error) {
 		}
 		allTracks = append(allTracks, resp.Tracks...)
 
+		// Early exit once all wanted tracks are located.
+		if wanted != nil {
+			for _, t := range resp.Tracks {
+				if wanted[t.ID] {
+					found[t.ID] = true
+				}
+			}
+			if len(found) == len(wanted) {
+				break
+			}
+		}
+
 		if !resp.HasMore || len(resp.Tracks) == 0 {
 			break
 		}
 		cursor = resp.Next
+
+		// Be gentle with the API between pages.
+		time.Sleep(800 * time.Millisecond)
 	}
 
 	return allTracks, nil
@@ -172,6 +221,10 @@ func convertTrack(t apiTrack) models.Track {
 		prompt = t.Metadata.Prompt
 	}
 
+	// Workspace: the v3 API names it "project"; fall back to the legacy
+	// workspace/workspace_name fields for older responses.
+	workspace := firstNonEmpty(t.Project.Name, t.Workspace, t.WorkspaceName)
+
 	return models.Track{
 		ID:        t.ID,
 		Title:     firstNonEmpty(t.Title, t.DisplayName, t.SongName),
@@ -179,7 +232,7 @@ func convertTrack(t apiTrack) models.Track {
 		Prompt:    prompt,
 		Lyrics:    firstNonEmpty(t.Lyrics, t.LyricsGenerated),
 		Tags:      tags,
-		Workspace: firstNonEmpty(t.Workspace, t.WorkspaceName),
+		Workspace: workspace,
 		Duration:  t.Duration,
 		CreatedAt: firstNonEmpty(t.CreatedAt, t.CreatedAtRaw),
 	}

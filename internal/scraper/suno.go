@@ -6,6 +6,7 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chromedp/cdproto/network"
@@ -14,9 +15,10 @@ import (
 
 // SunoScraper scrapes Suno track pages for lyrics, prompts, and metadata.
 type SunoScraper struct {
-	config    ScrapeConfig
-	allocCtx  context.Context
+	config      ScrapeConfig
+	allocCtx    context.Context
 	allocCancel context.CancelFunc
+	mu          sync.RWMutex
 }
 
 // NewSunoScraper creates a new SunoScraper with the given config.
@@ -25,6 +27,21 @@ func NewSunoScraper(cfg ScrapeConfig) *SunoScraper {
 		cfg = DefaultScrapeConfig()
 	}
 	return &SunoScraper{config: cfg}
+}
+
+// SetSessionCookie updates the session cookie used for authentication.
+func (s *SunoScraper) SetSessionCookie(cookie string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.config.SessionCookie = cookie
+}
+
+// snapshotConfig returns a copy of the current scrape config, safe for
+// concurrent use while SetSessionCookie may be writing.
+func (s *SunoScraper) snapshotConfig() ScrapeConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.config
 }
 
 // Start initializes the CDP connection to Lightpanda.
@@ -36,7 +53,6 @@ func (s *SunoScraper) Start(ctx context.Context) error {
 		chromedp.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"),
 	}
 
-	// Create the allocator context but don't connect yet
 	allocCtx, cancel := chromedp.NewExecAllocator(context.Background(), allocOpts...)
 	s.allocCtx = allocCtx
 	s.allocCancel = cancel
@@ -54,6 +70,7 @@ func (s *SunoScraper) Stop() {
 // ScrapeTrack scrapes a single track by ID using Lightpanda CDP.
 func (s *SunoScraper) ScrapeTrack(ctx context.Context, trackID string) (TrackMeta, error) {
 	meta := TrackMeta{}
+	cfg := s.snapshotConfig()
 
 	if s.allocCtx == nil {
 		return meta, fmt.Errorf("scraper not started, call Start() first")
@@ -62,12 +79,12 @@ func (s *SunoScraper) ScrapeTrack(ctx context.Context, trackID string) (TrackMet
 	log.Printf("[scraper] Scraping track %s", trackID)
 
 	// Create a context with timeout
-	taskCtx, cancel := context.WithTimeout(s.allocCtx, s.config.Timeout)
+	taskCtx, cancel := context.WithTimeout(s.allocCtx, cfg.Timeout)
 	defer cancel()
 
 	// Create chromedp context connected to Lightpanda CDP
-	log.Printf("[scraper] Connecting to CDP at %s", s.config.CDPEndpoint)
-	taskCtx, cancel = chromedp.NewRemoteAllocator(s.allocCtx, s.config.CDPEndpoint)
+	log.Printf("[scraper] Connecting to CDP at %s", cfg.CDPEndpoint)
+	taskCtx, cancel = chromedp.NewRemoteAllocator(s.allocCtx, cfg.CDPEndpoint)
 	defer cancel()
 
 	log.Printf("[scraper] Creating chromedp context")
@@ -75,7 +92,7 @@ func (s *SunoScraper) ScrapeTrack(ctx context.Context, trackID string) (TrackMet
 	defer cancel()
 
 	// Set Suno cookies if we have auth token
-	if s.config.AuthToken != "" {
+	if cfg.AuthToken != "" || cfg.SessionCookie != "" {
 		log.Printf("[scraper] Setting Suno cookies")
 		s.setSunoCookies(taskCtx)
 	}
@@ -113,47 +130,90 @@ func (s *SunoScraper) ScrapeTrack(ctx context.Context, trackID string) (TrackMet
 
 // setSunoCookies sets the Clerk session cookies for Suno authentication.
 func (s *SunoScraper) setSunoCookies(ctx context.Context) {
-	if s.config.AuthToken == "" {
+	cfg := s.snapshotConfig()
+	if cfg.AuthToken == "" && cfg.SessionCookie == "" {
 		return
 	}
 
-	log.Printf("[scraper] Setting Clerk session cookies")
+	log.Printf("[scraper] Setting Suno cookies")
 
-	// The Clerk JWT is typically used as the session token
-	// We need to set multiple cookies that Suno/Clerk expects
-	cookies := []struct {
-		name  string
-		value string
-	}{
-		{"__session", s.config.AuthToken},
-		{"__clerk_client_jwt", s.config.AuthToken},
-		{"clerk_session", s.config.AuthToken},
-		{"__clerk_session", s.config.AuthToken},
-		{"clerk.jwt", s.config.AuthToken},
-	}
-
-	for _, c := range cookies {
-		err := chromedp.Run(ctx, network.SetCookie(c.name, c.value).
-			WithDomain("suno.com").
-			WithPath("/").
-			WithSecure(true).
-			WithHTTPOnly(true).
-			WithSameSite(network.CookieSameSiteLax),
-		)
-		if err != nil {
-			log.Printf("[scraper] Failed to set cookie %s: %v", c.name, err)
+	// If we have a session cookie (from browser localStorage), use it directly
+	if cfg.SessionCookie != "" {
+		cookies := []struct {
+			name  string
+			value string
+			domain string
+		}{
+			{"__session", cfg.SessionCookie, "suno.com"},
+			{"__clerk_client_jwt", cfg.SessionCookie, "suno.com"},
+			{"clerk_session", cfg.SessionCookie, "suno.com"},
+			{"__clerk_session", cfg.SessionCookie, "suno.com"},
+			{"clerk.jwt", cfg.SessionCookie, "suno.com"},
 		}
+
+		for _, c := range cookies {
+			err := chromedp.Run(ctx, network.SetCookie(c.name, c.value).
+				WithDomain(c.domain).
+				WithPath("/").
+				WithSecure(true).
+				WithHTTPOnly(true).
+				WithSameSite(network.CookieSameSiteLax),
+			)
+			if err != nil {
+				log.Printf("[scraper] Failed to set cookie %s: %v", c.name, err)
+			}
+		}
+
+		// Also set for auth.suno.com subdomain
+		for _, c := range cookies {
+			chromedp.Run(ctx, network.SetCookie(c.name, c.value).
+				WithDomain("auth.suno.com").
+				WithPath("/").
+				WithSecure(true).
+				WithHTTPOnly(true).
+				WithSameSite(network.CookieSameSiteLax),
+			)
+		}
+		return
 	}
 
-	// Also try setting for auth.suno.com
-	for _, c := range cookies {
-		chromedp.Run(ctx, network.SetCookie(c.name, c.value).
-			WithDomain("auth.suno.com").
-			WithPath("/").
-			WithSecure(true).
-			WithHTTPOnly(true).
-			WithSameSite(network.CookieSameSiteLax),
-		)
+	// Fallback: try using access token as session (may not work for web)
+	if cfg.AuthToken != "" {
+		cookies := []struct {
+			name  string
+			value string
+			domain string
+		}{
+			{"__session", cfg.AuthToken, "suno.com"},
+			{"__clerk_client_jwt", cfg.AuthToken, "suno.com"},
+			{"clerk_session", cfg.AuthToken, "suno.com"},
+			{"__clerk_session", cfg.AuthToken, "suno.com"},
+			{"clerk.jwt", cfg.AuthToken, "suno.com"},
+		}
+
+		for _, c := range cookies {
+			err := chromedp.Run(ctx, network.SetCookie(c.name, c.value).
+				WithDomain(c.domain).
+				WithPath("/").
+				WithSecure(true).
+				WithHTTPOnly(true).
+				WithSameSite(network.CookieSameSiteLax),
+			)
+			if err != nil {
+				log.Printf("[scraper] Failed to set cookie %s: %v", c.name, err)
+			}
+		}
+
+		// Also set for auth.suno.com
+		for _, c := range cookies {
+			chromedp.Run(ctx, network.SetCookie(c.name, c.value).
+				WithDomain("auth.suno.com").
+				WithPath("/").
+				WithSecure(true).
+				WithHTTPOnly(true).
+				WithSameSite(network.CookieSameSiteLax),
+			)
+		}
 	}
 }
 
@@ -283,7 +343,7 @@ func extractFirstMatch(text, pattern string) string {
 	return ""
 }
 
-// cleanLyrics cleans up extracted lyrics text.
+// cleanLyrics cleans up extracted lyrics text and formats section tags.
 func cleanLyrics(text string) string {
 	text = strings.ReplaceAll(text, `\n`, "\n")
 	text = strings.ReplaceAll(text, `\r`, "\r")
@@ -291,6 +351,12 @@ func cleanLyrics(text string) string {
 	text = strings.ReplaceAll(text, `\"`, `"`)
 	text = strings.ReplaceAll(text, `\'`, `'`)
 	text = strings.ReplaceAll(text, `\\`, `\`)
+
+	// Format section tags with line breaks
+	sectionPattern := regexp.MustCompile(`\[([^\]]+)\]`)
+	text = sectionPattern.ReplaceAllStringFunc(text, func(match string) string {
+		return "\n\n" + match + "\n"
+	})
 
 	lines := strings.Split(text, "\n")
 	var cleaned []string

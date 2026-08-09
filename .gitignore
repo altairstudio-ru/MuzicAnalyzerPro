@@ -11,3 +11,6 @@ __pycache__/
 *.egg-info/
 dist/
 lightpanda
+opencode.json
+feedtest.go
+dltest*.go
