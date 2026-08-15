@@ -84,6 +84,7 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 	s.Router.Get("/", s.dashboard)
 	s.Router.Get("/tracks/{id}", s.trackDetail)
 	s.Router.Post("/sync", s.triggerSync)
+	s.Router.Get("/api/sync-status", s.syncStatusHandler)
 	s.Router.Get("/audio/{id}", s.serveAudio)
 	s.Router.Get("/lyrics/{id}", s.serveLyrics)
 	s.Router.Post("/export-lyrics/{id}", s.exportLyrics)
@@ -166,19 +167,35 @@ func (s *Server) triggerSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Run sync in background
-	go func() {
-		stats, err := s.Manager.Sync()
-		if err != nil {
-			log.Printf("Sync error: %v", err)
-			return
-		}
-		log.Printf("Sync complete: %+v", stats)
-	}()
+	// Atomically reserve the sync slot. If a sync is already running, the
+	// background goroutine from TrySyncBackground is the only one allowed.
+	if !s.Manager.TrySyncBackground() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": "sync already in progress"})
+		return
+	}
 
-	// Redirect back to main page
-	w.Header().Set("HX-Redirect", "/")
-	w.WriteHeader(http.StatusOK)
+	// Accepted — the frontend polls /api/sync-status for progress.
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// syncStatusHandler returns the live sync progress as JSON.
+func (s *Server) syncStatusHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	st := s.Manager.GetSyncStatus()
+	json.NewEncoder(w).Encode(map[string]any{
+		"running":     st.Running,
+		"phase":       st.Phase,
+		"processed":   st.Processed,
+		"new":         st.New,
+		"downloaded":  st.Downloaded,
+		"errors":      st.Errors,
+		"last_track":  st.LastTrack,
+		"started_at":  st.StartedAt,
+		"finished_at": st.FinishedAt,
+		"error":       st.ErrMsg,
+	})
 }
 
 // serveAudio serves an audio file for inline playback.

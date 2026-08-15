@@ -5,12 +5,15 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/db"
@@ -23,6 +26,91 @@ type Manager struct {
 	Config *Config
 	Suno   *suno.Client
 	DB     *sql.DB
+	status *SyncStatus
+}
+
+// SyncPhase describes the current stage of a sync run.
+type SyncPhase string
+
+const (
+	PhaseFetch    SyncPhase = "fetch"    // paginating the Suno feed
+	PhaseDownload SyncPhase = "download" // downloading track audio
+	PhaseDone     SyncPhase = "done"     // finished (or failed)
+)
+
+// SyncStatus holds live progress of a sync run, safe for concurrent access
+// so the web UI can poll it while the background sync goroutine updates it.
+type SyncStatus struct {
+	mu         sync.Mutex
+	Running    bool
+	Phase      SyncPhase
+	Processed  int
+	New        int
+	Downloaded int
+	Errors     int
+	LastTrack  string
+	StartedAt  time.Time
+	FinishedAt time.Time
+	ErrMsg     string
+}
+
+func newSyncStatus() *SyncStatus {
+	return &SyncStatus{}
+}
+
+// GetSyncStatus returns a snapshot of the current sync status.
+func (m *Manager) GetSyncStatus() SyncStatus {
+	m.status.mu.Lock()
+	defer m.status.mu.Unlock()
+	return SyncStatus{
+		Running:    m.status.Running,
+		Phase:      m.status.Phase,
+		Processed:  m.status.Processed,
+		New:        m.status.New,
+		Downloaded: m.status.Downloaded,
+		Errors:     m.status.Errors,
+		LastTrack:  m.status.LastTrack,
+		StartedAt:  m.status.StartedAt,
+		FinishedAt: m.status.FinishedAt,
+		ErrMsg:     m.status.ErrMsg,
+	}
+}
+
+// beginSync marks a sync run as started; returns false if one is running.
+func (m *Manager) beginSync() bool {
+	m.status.mu.Lock()
+	defer m.status.mu.Unlock()
+	if m.status.Running {
+		return false
+	}
+	m.status.Running = true
+	m.status.Phase = PhaseFetch
+	m.status.Processed = 0
+	m.status.New = 0
+	m.status.Downloaded = 0
+	m.status.Errors = 0
+	m.status.LastTrack = ""
+	m.status.StartedAt = time.Now()
+	m.status.FinishedAt = time.Time{}
+	m.status.ErrMsg = ""
+	return true
+}
+
+// updateSync mutates the status with the given function applied under lock.
+func (m *Manager) updateSync(fn func(s *SyncStatus)) {
+	m.status.mu.Lock()
+	defer m.status.mu.Unlock()
+	fn(m.status)
+}
+
+// finishSync marks the sync run complete, preserving a previously set error
+// message (e.g. one recorded before an early-return error path).
+func (m *Manager) finishSync() {
+	m.status.mu.Lock()
+	defer m.status.mu.Unlock()
+	m.status.Running = false
+	m.status.Phase = PhaseDone
+	m.status.FinishedAt = time.Now()
 }
 
 // NewManager creates a new library manager using the given config.
@@ -44,6 +132,7 @@ func NewManager(cfg *Config) (*Manager, error) {
 		Config: cfg,
 		Suno:   sunoClient,
 		DB:     database,
+		status: newSyncStatus(),
 	}, nil
 }
 
@@ -64,6 +153,32 @@ func (m *Manager) SetAuthToken(token string) {
 
 // Sync performs a full sync: fetch all tracks from Suno, update DB, download audio.
 func (m *Manager) Sync() (*models.SyncStats, error) {
+	if !m.beginSync() {
+		return nil, errors.New("sync already in progress")
+	}
+	defer m.finishSync()
+	return m.syncOnce()
+}
+
+// TrySyncBackground atomically reserves the sync slot and runs the sync in a
+// background goroutine. Reports progress via GetSyncStatus. Returns false if a
+// sync is already in progress.
+func (m *Manager) TrySyncBackground() bool {
+	if !m.beginSync() {
+		return false
+	}
+	go func() {
+		defer m.finishSync()
+		if _, err := m.syncOnce(); err != nil {
+			log.Printf("Sync error: %v", err)
+		}
+	}()
+	return true
+}
+
+// syncOnce runs a single sync pass. The caller must have reserved the slot via
+// beginSync (or TrySyncBackground).
+func (m *Manager) syncOnce() (*models.SyncStats, error) {
 	stats := &models.SyncStats{}
 
 	pageSize := 50
@@ -74,13 +189,27 @@ func (m *Manager) Sync() (*models.SyncStats, error) {
 		resp, err := m.Suno.FetchTracks(cursor, pageSize)
 		if err != nil {
 			if suno.IsRateLimited(err) && stats.TotalTracks > 0 {
+				m.updateSync(func(s *SyncStatus) {
+					s.ErrMsg = fmt.Sprintf("rate limited at cursor %q (processed %d tracks)", cursor, stats.TotalTracks)
+				})
 				return stats, fmt.Errorf("rate limited at cursor %q (processed %d tracks)", cursor, stats.TotalTracks)
 			}
+			m.updateSync(func(s *SyncStatus) {
+				s.ErrMsg = fmt.Sprintf("fetch cursor %q: %v", cursor, err)
+			})
 			return nil, fmt.Errorf("fetch cursor %q: %w", cursor, err)
 		}
+		m.updateSync(func(s *SyncStatus) {
+			s.Phase = PhaseFetch
+		})
 
 		for _, track := range resp.Tracks {
 			isNew := false
+
+			m.updateSync(func(s *SyncStatus) {
+				s.Phase = PhaseFetch
+				s.LastTrack = track.Title
+			})
 
 			existing, err := db.GetTrack(m.DB, track.ID)
 			if err != nil {
@@ -98,6 +227,9 @@ func (m *Manager) Sync() (*models.SyncStats, error) {
 			audioPath := m.audioPath(track)
 
 			if existing == nil || !existing.IsDownloaded {
+				m.updateSync(func(s *SyncStatus) {
+					s.Phase = PhaseDownload
+				})
 				err := m.downloadTrack(track, audioPath)
 				if err != nil {
 					stats.Errors++
@@ -144,6 +276,13 @@ func (m *Manager) Sync() (*models.SyncStats, error) {
 			} else {
 				stats.UpdatedTracks++
 			}
+
+			m.updateSync(func(s *SyncStatus) {
+				s.Processed = stats.TotalTracks
+				s.New = stats.NewTracks
+				s.Downloaded = stats.Downloaded
+				s.Errors = stats.Errors
+			})
 		}
 
 		if !resp.HasMore || len(resp.Tracks) == 0 {

@@ -411,7 +411,16 @@ function toggleRefPanel() {
         </div>
         {{end}}
         <div class="sync-area">
-            <button class="btn btn-primary" hx-post="/sync" hx-swap="none">🔄 Синхронизировать</button>
+            <button id="sync-btn" class="btn btn-primary" hx-post="/sync" hx-swap="none"
+                    hx-on::before-request="startSyncPoll()"
+                    hx-on::after-request="syncAfterRequest(event)">
+                🔄 Синхронизировать
+            </button>
+            <div id="sync-progress" style="display:none; margin-top:10px; font-size:12px; color:#8b949e; line-height:1.6;">
+                <div id="sync-status-line">🔄 Синхронизация…</div>
+                <div id="sync-counters">Обработано: 0 · Новых: 0 · Скачано: 0 · Ошибок: 0</div>
+                <div id="sync-track" style="color:#58a6ff;">&nbsp;</div>
+            </div>
         </div>
     </aside>
     <main class="content">
@@ -522,5 +531,80 @@ function toggleRefPanel() {
         {{end}}
     </main>
 </div>
+<script>
+    let syncPollTimer = null;
+
+    function syncCountersText(st) {
+        return 'Обработано: ' + st.processed + ' · Новых: ' + st.new +
+               ' · Скачано: ' + st.downloaded + ' · Ошибок: ' + st.errors;
+    }
+
+    function renderSyncStatus(st) {
+        const panel = document.getElementById('sync-progress');
+        const line = document.getElementById('sync-status-line');
+        const counters = document.getElementById('sync-counters');
+        const track = document.getElementById('sync-track');
+        if (!panel) return;
+        panel.style.display = 'block';
+        if (st.running) {
+            line.textContent = '🔄 Синхронизация…';
+        } else if (st.error) {
+            line.textContent = '⚠️ Ошибка: ' + st.error;
+        } else if (st.phase === 'done' && st.processed > 0) {
+            line.textContent = '✓ Синхронизация завершена';
+        } else {
+            line.textContent = 'Ожидание запуска…';
+        }
+        counters.textContent = syncCountersText(st);
+        track.textContent = st.last_track ? 'Сейчас: ' + st.last_track : ' ';
+    }
+
+    async function pollSyncStatus() {
+        let response;
+        try {
+            response = await fetch('/api/sync-status');
+        } catch (err) {
+            return;
+        }
+        const st = await response.json();
+        renderSyncStatus(st);
+        if (st.running) {
+            syncPollTimer = setTimeout(pollSyncStatus, 1500);
+        } else {
+            syncPollTimer = null;
+            document.getElementById('sync-btn').disabled = false;
+            if (st.error) {
+                const line = document.getElementById('sync-status-line');
+                if (line) setTimeout(() => { line.textContent = '⚠️ Ошибка: ' + st.error; }, 0);
+            } else if (st.processed > 0) {
+                setTimeout(() => window.location.reload(), 1500);
+            } else {
+                const panel = document.getElementById('sync-progress');
+                if (panel) setTimeout(() => { panel.style.display = 'none'; }, 3000);
+            }
+        }
+    }
+
+    function startSyncPoll() {
+        document.getElementById('sync-btn').disabled = true;
+        clearTimeout(syncPollTimer);
+        syncPollTimer = setTimeout(pollSyncStatus, 300);
+    }
+
+    function syncAfterRequest(evt) {
+        if (evt.detail.xhr.status === 409) {
+            document.getElementById('sync-btn').disabled = false;
+            const line = document.getElementById('sync-status-line');
+            if (line) line.textContent = '⚠️ Синхронизация уже идёт';
+            clearTimeout(syncPollTimer);
+            syncPollTimer = setTimeout(pollSyncStatus, 1500);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        clearTimeout(syncPollTimer);
+        syncPollTimer = setTimeout(pollSyncStatus, 300);
+    });
+</script>
 </body>
 </html>
