@@ -233,7 +233,59 @@ be run repeatedly until every track is archived.`,
 		},
 	}
 
-	rootCmd.AddCommand(authCmd, syncCmd, serveCmd, importCmd, fixLyricsCmd, retryDownloadsCmd, versionCmd)
+	exportNotesCmd := &cobra.Command{
+		Use:   "export-notes",
+		Short: "Export tracks as markdown notes into an Obsidian vault",
+		Long: `Export every track (title, artist, prompt, tags, lyrics) as a markdown
+note under <vault>/tracks, plus a plain-text corpus under <vault>/corpus for
+training a custom author model. The corpus is regenerated on every run. Uses
+the export_vault from the config unless --vault is given. Only changed notes
+are rewritten unless --overwrite is set.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := library.LoadConfig(basePath)
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+
+			mgr, err := library.NewManager(cfg)
+			if err != nil {
+				return fmt.Errorf("init library: %w", err)
+			}
+			defer mgr.Close()
+
+			vault, _ := cmd.Flags().GetString("vault")
+			if vault == "" {
+				vault = cfg.Suno.ExportVault
+			}
+			if vault == "" {
+				return fmt.Errorf("no export vault configured — set export_vault in config.yaml or pass --vault")
+			}
+
+			overwrite, _ := cmd.Flags().GetBool("overwrite")
+
+			fmt.Printf("📝 Exporting notes to %s\n", vault)
+			stats, err := mgr.ExportNotes(library.ExportOptions{
+				Vault:     vault,
+				Overwrite: overwrite,
+			})
+			if err != nil {
+				return fmt.Errorf("export notes: %w", err)
+			}
+
+			fmt.Printf("\n✓ Export complete!\n")
+			fmt.Printf("  Notes written:      %d\n", stats.NotesWritten)
+			fmt.Printf("  Notes unchanged:    %d\n", stats.NotesSkipped)
+			fmt.Printf("  Corpus tracks:      %d\n", stats.CorpusTracks)
+			if stats.Errors > 0 {
+				fmt.Printf("  Errors:             %d\n", stats.Errors)
+			}
+			return nil
+		},
+	}
+	exportNotesCmd.Flags().String("vault", "", "Target Obsidian vault directory (overrides export_vault in config)")
+	exportNotesCmd.Flags().Bool("overwrite", false, "Rewrite every note, not only changed ones")
+
+	rootCmd.AddCommand(authCmd, syncCmd, serveCmd, importCmd, fixLyricsCmd, retryDownloadsCmd, versionCmd, exportNotesCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

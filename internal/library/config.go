@@ -28,6 +28,9 @@ type SunoConfig struct {
 	// AudioBasePath optionally overrides where audio files are stored.
 	// Defaults to BasePath when empty.
 	AudioBasePath string `yaml:"audio_base_path"`
+	// ExportVault optionally enables exporting tracks into an Obsidian vault.
+	// When set, sync updates markdown notes under this directory. Empty disables.
+	ExportVault string `yaml:"export_vault"`
 }
 
 // LoadConfig loads configuration from the config file.

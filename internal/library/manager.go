@@ -303,7 +303,25 @@ func (m *Manager) syncOnce() (*models.SyncStats, error) {
 		}
 	}
 
+	if err := m.exportAfterSync(); err != nil {
+		m.updateSync(func(s *SyncStatus) {
+			s.ErrMsg = fmt.Sprintf("export notes: %v", err)
+		})
+		log.Printf("Export notes: %v", err)
+	}
+
 	return stats, nil
+}
+
+// exportAfterSync reflects new/changed tracks into the Obsidian vault when an
+// export_vault is configured. It rewrites only notes whose content changed.
+func (m *Manager) exportAfterSync() error {
+	vault := m.Config.Suno.ExportVault
+	if vault == "" {
+		return nil
+	}
+	_, err := m.ExportNotes(ExportOptions{Vault: vault})
+	return err
 }
 
 // ImportFromDisk scans an audio directory for *.mp3 files and registers any
