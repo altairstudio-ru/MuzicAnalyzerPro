@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -96,7 +97,7 @@ func (m *Manager) ExportNotes(opts ExportOptions) (*ExportStats, error) {
 		content := renderNote(t, lyrics)
 		hash := hashContent(content)
 
-		name := t.ID + ".md"
+		name := noteFilename(t)
 		if !opts.Overwrite && manifest[name] == hash {
 			next[name] = hash
 			stats.NotesSkipped++
@@ -122,6 +123,14 @@ func (m *Manager) ExportNotes(opts ExportOptions) (*ExportStats, error) {
 		}
 		workspaceLyrics[ws] = append(workspaceLyrics[ws], header+"\n\n"+strings.TrimSpace(lyrics))
 		stats.CorpusTracks++
+	}
+
+	keep := make(map[string]bool, len(tracks))
+	for _, t := range tracks {
+		keep[noteFilename(t)] = true
+	}
+	if err := cleanupNotes(tracksDir, keep); err != nil {
+		return stats, err
 	}
 
 	if err := writeCorpus(corpusDir, fullLyrics, workspaceLyrics); err != nil {
@@ -154,6 +163,53 @@ func ensureVault(vault string) error {
 		return nil
 	}
 	return os.MkdirAll(obsidianDir, 0o755)
+}
+
+// noteFilename builds an Obsidian note name from a track, mirroring the audio
+// file naming: "Artist — Title [id].md". Falls back to "Title [id].md" when
+// the artist is empty, to "Artist [id].md" when the title is empty, and to
+// "[id].md" when both are. The ID is always present and keeps names unique
+// even for identical titles.
+func noteFilename(t models.Track) string {
+	artist := sanitizeFilename(t.Artist)
+	title := sanitizeFilename(t.Title)
+
+	switch {
+	case artist != "" && title != "":
+		return artist + " — " + title + " [" + t.ID + "].md"
+	case title != "":
+		return title + " [" + t.ID + "].md"
+	case artist != "":
+		return artist + " [" + t.ID + "].md"
+	default:
+		return "[" + t.ID + "].md"
+	}
+}
+
+// noteNameRe matches both note name formats we write: "<uuid>.md" (legacy)
+// and "<anything> [<uuid>].md" (current), so cleanup never removes notes the
+// user created by hand.
+var noteNameRe = regexp.MustCompile(`^(?:.* \[)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\]?\.md$`)
+
+// cleanupNotes removes stale note files (renamed/deleted tracks) from the
+// tracks directory. Only files matching our generated naming are touched;
+// anything else in the directory is left alone.
+func cleanupNotes(tracksDir string, keep map[string]bool) error {
+	entries, err := os.ReadDir(tracksDir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() || !noteNameRe.MatchString(e.Name()) {
+			continue
+		}
+		if !keep[e.Name()] {
+			if err := os.Remove(filepath.Join(tracksDir, e.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // renderNote builds a complete markdown note for a track.
