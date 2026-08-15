@@ -10,6 +10,8 @@ CLI + Web UI + Chrome Extension for archiving and analyzing Suno AI music tracks
 - **Visualize** — web UI with HTMX, dark theme, audio player, comparison charts
 - **Recommend** — AI-powered improvement suggestions
 - **Extend** — Chrome extension for one-click auth token extraction
+- **Link** — Obsidian notes embed a playable audio link (`![[…mp3]]`) and the
+  web track page links back to the song on suno.com
 
 ## Architecture
 

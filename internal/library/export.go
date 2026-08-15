@@ -212,7 +212,12 @@ func cleanupNotes(tracksDir string, keep map[string]bool) error {
 	return nil
 }
 
-// renderNote builds a complete markdown note for a track.
+// renderNote builds a complete markdown note for a track. When the track has
+// downloaded audio, an Obsidian embed (![[..mp3]]) is added under the
+// frontmatter so the audio can be played right from the note. The audio must
+// live inside the vault (or be reachable through a symlink placed in it, e.g.
+// <vault>/audio -> the audio base path); the filename is unique thanks to the
+// [uuid] suffix, so Obsidian resolves the embed globally.
 func renderNote(t models.Track, lyrics string) string {
 	fm := noteFrontmatter{
 		ID:        t.ID,
@@ -229,6 +234,11 @@ func renderNote(t models.Track, lyrics string) string {
 	b.WriteString("---\n")
 	b.Write(header)
 	b.WriteString("---\n\n")
+	if t.AudioPath != "" {
+		b.WriteString("![[")
+		b.WriteString(filepath.Base(t.AudioPath))
+		b.WriteString("]]\n\n")
+	}
 	if strings.TrimSpace(lyrics) != "" {
 		b.WriteString(strings.TrimSpace(lyrics))
 		b.WriteString("\n")

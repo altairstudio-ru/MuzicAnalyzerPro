@@ -33,6 +33,12 @@ type Manager struct {
 	// cancel is closed when the user requests the running sync to stop.
 	// A fresh channel is created at the start of every sync run.
 	cancel chan struct{}
+
+	// tokenMu guards tokenGen. tokenGen is bumped on every SetAuthToken so a
+	// running sync can notice a refreshed session cookie and resume without
+	// being restarted.
+	tokenMu  sync.Mutex
+	tokenGen uint64
 }
 
 // SyncPhase describes the current stage of a sync run.
@@ -59,6 +65,9 @@ type SyncStatus struct {
 	FinishedAt time.Time
 	ErrMsg     string
 	Stopped    bool
+	// WaitingAuth is set while a sync is paused waiting for a fresh Suno
+	// session cookie (the previous one expired mid-run).
+	WaitingAuth bool
 }
 
 func newSyncStatus() *SyncStatus {
@@ -70,17 +79,18 @@ func (m *Manager) GetSyncStatus() SyncStatus {
 	m.status.mu.Lock()
 	defer m.status.mu.Unlock()
 	return SyncStatus{
-		Running:    m.status.Running,
-		Phase:      m.status.Phase,
-		Processed:  m.status.Processed,
-		New:        m.status.New,
-		Downloaded: m.status.Downloaded,
-		Errors:     m.status.Errors,
-		LastTrack:  m.status.LastTrack,
-		StartedAt:  m.status.StartedAt,
-		FinishedAt: m.status.FinishedAt,
-		ErrMsg:     m.status.ErrMsg,
-		Stopped:    m.status.Stopped,
+		Running:     m.status.Running,
+		Phase:       m.status.Phase,
+		Processed:   m.status.Processed,
+		New:         m.status.New,
+		Downloaded:  m.status.Downloaded,
+		Errors:      m.status.Errors,
+		LastTrack:   m.status.LastTrack,
+		StartedAt:   m.status.StartedAt,
+		FinishedAt:  m.status.FinishedAt,
+		ErrMsg:      m.status.ErrMsg,
+		Stopped:     m.status.Stopped,
+		WaitingAuth: m.status.WaitingAuth,
 	}
 }
 
@@ -102,8 +112,23 @@ func (m *Manager) beginSync() bool {
 	m.status.FinishedAt = time.Time{}
 	m.status.ErrMsg = ""
 	m.status.Stopped = false
+	m.status.WaitingAuth = false
 	m.cancel = make(chan struct{})
 	return true
+}
+
+// tokenGeneration returns the current auth-token generation counter.
+func (m *Manager) tokenGeneration() uint64 {
+	m.tokenMu.Lock()
+	defer m.tokenMu.Unlock()
+	return m.tokenGen
+}
+
+// bumpTokenGen marks the auth token as refreshed.
+func (m *Manager) bumpTokenGen() {
+	m.tokenMu.Lock()
+	defer m.tokenMu.Unlock()
+	m.tokenGen++
 }
 
 // updateSync mutates the status with the given function applied under lock.
@@ -176,6 +201,7 @@ func (m *Manager) Close() error {
 func (m *Manager) SetAuthToken(token string) {
 	m.Suno.SetAuthToken(token)
 	m.Config.Suno.SessionCookie = token
+	m.bumpTokenGen()
 }
 
 // Sync performs a full sync: fetch all tracks from Suno, update DB, download audio.
@@ -211,6 +237,11 @@ func (m *Manager) syncOnce() (*models.SyncStats, error) {
 	pageSize := 50
 	cursor := ""
 	workspaceSet := make(map[string]bool)
+	// A Suno session cookie is short-lived (about one hour), and a full sync
+	// can outlive it. When the API starts returning 401 mid-run we pause and
+	// wait for the user to refresh the token via the Chrome extension; the
+	// same cursor is then retried without restarting the whole sync.
+	const waitAuthTimeout = 15 * time.Minute
 
 	for {
 		if m.isCanceled() {
@@ -228,6 +259,41 @@ func (m *Manager) syncOnce() (*models.SyncStats, error) {
 				})
 				return stats, fmt.Errorf("rate limited at cursor %q (processed %d tracks)", cursor, stats.TotalTracks)
 			}
+
+			if suno.IsUnauthorized(err) {
+				gen := m.tokenGeneration()
+				m.updateSync(func(s *SyncStatus) {
+					s.WaitingAuth = true
+					s.ErrMsg = "токен Suno истёк — обновите его в расширении Chrome; синхронизация продолжится автоматически"
+				})
+				deadline := time.Now().Add(waitAuthTimeout)
+				for {
+					if m.isCanceled() {
+						m.updateSync(func(s *SyncStatus) {
+							s.WaitingAuth = false
+							s.ErrMsg = "stopped by user"
+						})
+						return stats, nil
+					}
+					if m.tokenGeneration() != gen {
+						m.updateSync(func(s *SyncStatus) {
+							s.WaitingAuth = false
+							s.ErrMsg = ""
+						})
+						break
+					}
+					if time.Now().After(deadline) {
+						m.updateSync(func(s *SyncStatus) {
+							s.WaitingAuth = false
+							s.ErrMsg = fmt.Sprintf("токен Suno не обновлён за %s — синхронизация остановлена", waitAuthTimeout)
+						})
+						return stats, fmt.Errorf("fetch cursor %q: %w", cursor, err)
+					}
+					time.Sleep(2 * time.Second)
+				}
+				continue
+			}
+
 			m.updateSync(func(s *SyncStatus) {
 				s.ErrMsg = fmt.Sprintf("fetch cursor %q: %v", cursor, err)
 			})

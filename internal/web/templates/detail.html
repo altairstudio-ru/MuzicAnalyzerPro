@@ -501,6 +501,7 @@ function toggleRefPanel() {
                 <p>ID: {{.ID}}</p>
                 <p>Дата: {{.CreatedAt}}</p>
                 <p>Путь: {{.AudioPath}}</p>
+                <p><a href="https://suno.com/song/{{.ID}}" target="_blank" rel="noopener" style="color:#58a6ff;">🔗 Открыть трек на Suno</a></p>
             </div>
         </div>
 
@@ -589,7 +590,10 @@ function toggleRefPanel() {
         const track = document.getElementById('sync-track');
         const stopBtn = document.getElementById('sync-stop-btn');
         if (!line) return;
-        if (st.stopped) {
+        if (st.waiting_auth) {
+            line.innerHTML = '<span class="spinner"></span>⏳ Токен истёк — обновите его в расширении Chrome, синхронизация продолжится автоматически';
+            if (stopBtn) stopBtn.style.display = '';
+        } else if (st.stopped) {
             line.innerHTML = '⏹ Остановлено';
             if (stopBtn) stopBtn.style.display = 'none';
         } else if (st.running) {

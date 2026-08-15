@@ -204,6 +204,7 @@ func (s *Server) syncStatusHandler(w http.ResponseWriter, r *http.Request) {
 		"finished_at": st.FinishedAt,
 		"error":       st.ErrMsg,
 		"stopped":     st.Stopped,
+		"waiting_auth": st.WaitingAuth,
 	})
 }
 
@@ -587,7 +588,7 @@ func (s *Server) authHandler(w http.ResponseWriter, r *http.Request) {
 
 	if req.Token != "" {
 		cfg.Suno.AuthToken = req.Token
-		s.Manager.Suno.SetAuthToken(req.Token)
+		s.Manager.SetAuthToken(req.Token)
 		updated = true
 	}
 	if req.SessionCookie != "" {

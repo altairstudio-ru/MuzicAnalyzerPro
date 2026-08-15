@@ -17,3 +17,9 @@ var (
 func IsRateLimited(err error) bool {
 	return errors.Is(err, ErrRateLimited)
 }
+
+// IsUnauthorized returns true if the error is an auth error (missing,
+// invalid, or expired token).
+func IsUnauthorized(err error) bool {
+	return errors.Is(err, ErrUnauthorized)
+}

@@ -3,6 +3,7 @@ package library
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/db"
@@ -91,6 +92,30 @@ func TestCleanupNotesDoesNotMatchNonNote(t *testing.T) {
 	}
 	if _, err := os.Stat(bad); err != nil {
 		t.Errorf("non-note file removed: %v", err)
+	}
+}
+
+func TestRenderNoteAudioEmbed(t *testing.T) {
+	base := "Настя — Гудки [" + testID + "].mp3"
+	withAudio := models.Track{
+		ID:        testID,
+		Title:     "Гудки",
+		Artist:    "Настя",
+		AudioPath: "/mount/DISK3/allSuno/audio/Unknown/" + base,
+		Lyrics:    "текст",
+	}
+	note := renderNote(withAudio, "текст")
+	if !strings.Contains(note, "![["+base+"]]") {
+		t.Errorf("note missing audio embed, got:\n%s", note)
+	}
+	if strings.HasPrefix(note, "![[") {
+		t.Errorf("embed must come after frontmatter")
+	}
+
+	noAudio := models.Track{ID: testID, Title: "Гудки", Artist: "Настя", Lyrics: "текст"}
+	note = renderNote(noAudio, "текст")
+	if strings.Contains(note, "![[") {
+		t.Errorf("embed present for track without audio:\n%s", note)
 	}
 }
 
