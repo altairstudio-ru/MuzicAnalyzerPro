@@ -84,6 +84,7 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 	s.Router.Get("/", s.dashboard)
 	s.Router.Get("/tracks/{id}", s.trackDetail)
 	s.Router.Post("/sync", s.triggerSync)
+	s.Router.Post("/sync/stop", s.stopSync)
 	s.Router.Get("/api/sync-status", s.syncStatusHandler)
 	s.Router.Get("/audio/{id}", s.serveAudio)
 	s.Router.Get("/lyrics/{id}", s.serveLyrics)
@@ -180,6 +181,13 @@ func (s *Server) triggerSync(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
+// stopSync requests the running background sync to stop at the next safe point.
+func (s *Server) stopSync(w http.ResponseWriter, r *http.Request) {
+	s.Manager.StopSync()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "stopping"})
+}
+
 // syncStatusHandler returns the live sync progress as JSON.
 func (s *Server) syncStatusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -195,6 +203,7 @@ func (s *Server) syncStatusHandler(w http.ResponseWriter, r *http.Request) {
 		"started_at":  st.StartedAt,
 		"finished_at": st.FinishedAt,
 		"error":       st.ErrMsg,
+		"stopped":     st.Stopped,
 	})
 }
 

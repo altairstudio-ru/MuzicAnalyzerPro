@@ -30,6 +30,9 @@ type Manager struct {
 	// RenameOnSync is read at sync time; when true, downloaded audio/lyrics
 	// files are moved to match the current title/workspace from the feed.
 	RenameOnSync bool
+	// cancel is closed when the user requests the running sync to stop.
+	// A fresh channel is created at the start of every sync run.
+	cancel chan struct{}
 }
 
 // SyncPhase describes the current stage of a sync run.
@@ -55,6 +58,7 @@ type SyncStatus struct {
 	StartedAt  time.Time
 	FinishedAt time.Time
 	ErrMsg     string
+	Stopped    bool
 }
 
 func newSyncStatus() *SyncStatus {
@@ -76,6 +80,7 @@ func (m *Manager) GetSyncStatus() SyncStatus {
 		StartedAt:  m.status.StartedAt,
 		FinishedAt: m.status.FinishedAt,
 		ErrMsg:     m.status.ErrMsg,
+		Stopped:    m.status.Stopped,
 	}
 }
 
@@ -96,6 +101,8 @@ func (m *Manager) beginSync() bool {
 	m.status.StartedAt = time.Now()
 	m.status.FinishedAt = time.Time{}
 	m.status.ErrMsg = ""
+	m.status.Stopped = false
+	m.cancel = make(chan struct{})
 	return true
 }
 
@@ -114,6 +121,23 @@ func (m *Manager) finishSync() {
 	m.status.Running = false
 	m.status.Phase = PhaseDone
 	m.status.FinishedAt = time.Now()
+}
+
+// StopSync requests a running sync to stop at the next safe point (end of the
+// current track or page). It is safe to call when no sync is running.
+func (m *Manager) StopSync() {
+	m.status.mu.Lock()
+	m.cancel = make(chan struct{})
+	m.status.Stopped = true
+	close(m.cancel)
+	m.status.mu.Unlock()
+}
+
+// isCanceled reports whether the user requested the running sync to stop.
+func (m *Manager) isCanceled() bool {
+	m.status.mu.Lock()
+	defer m.status.mu.Unlock()
+	return m.cancel != nil && m.status.Stopped
 }
 
 // NewManager creates a new library manager using the given config.
@@ -189,6 +213,13 @@ func (m *Manager) syncOnce() (*models.SyncStats, error) {
 	workspaceSet := make(map[string]bool)
 
 	for {
+		if m.isCanceled() {
+			st := stats
+			m.updateSync(func(s *SyncStatus) {
+				s.ErrMsg = "stopped by user"
+			})
+			return st, nil
+		}
 		resp, err := m.Suno.FetchTracks(cursor, pageSize)
 		if err != nil {
 			if suno.IsRateLimited(err) && stats.TotalTracks > 0 {
@@ -308,6 +339,14 @@ func (m *Manager) syncOnce() (*models.SyncStats, error) {
 		}
 		cursor = resp.Next
 		time.Sleep(500 * time.Millisecond)
+	}
+
+	if m.isCanceled() {
+		st := stats
+		m.updateSync(func(s *SyncStatus) {
+			s.ErrMsg = "stopped by user"
+		})
+		return st, nil
 	}
 
 	for ws := range workspaceSet {

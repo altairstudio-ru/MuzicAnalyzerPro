@@ -388,6 +388,29 @@ function toggleRefPanel() {
         .metric-bar-bg { flex: 1; height: 6px; background: #21262d; border-radius: 3px; overflow: hidden; }
         .metric-bar { height: 100%; border-radius: 3px; transition: width 0.3s; }
         .metric-val { flex: 0 0 40px; text-align: right; font-family: monospace; font-size: 12px; font-weight: 600; }
+
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(1, 4, 9, 0.72);
+            display: none; align-items: center; justify-content: center; z-index: 100;
+        }
+        .modal-overlay.open { display: flex; }
+        .modal {
+            background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+            padding: 28px; width: 100%; max-width: 520px; box-shadow: 0 16px 60px rgba(0,0,0,.5);
+        }
+        .modal h3 { font-size: 17px; color: #e6edf3; margin-bottom: 16px; }
+        .modal .sync-line { font-size: 15px; color: #c9d1d9; margin-bottom: 10px; }
+        .modal .sync-counters { font-size: 13px; color: #8b949e; line-height: 1.8; }
+        .modal .sync-track { font-size: 12px; color: #58a6ff; margin: 10px 0 18px; min-height: 16px; word-break: break-word; }
+        .modal .modal-actions { display: flex; gap: 10px; }
+        .btn-danger { background: #da3633; border-color: #f85149; color: #fff; }
+        .btn-danger:hover { background: #f85149; }
+        .spinner {
+            display: inline-block; width: 14px; height: 14px; border: 2px solid #58a6ff66;
+            border-top-color: #58a6ff; border-radius: 50%; vertical-align: -2px;
+            animation: spin .8s linear infinite; margin-right: 6px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -416,11 +439,6 @@ function toggleRefPanel() {
                     hx-on::after-request="syncAfterRequest(event)">
                 🔄 Синхронизировать
             </button>
-            <div id="sync-progress" style="display:none; margin-top:10px; font-size:12px; color:#8b949e; line-height:1.6;">
-                <div id="sync-status-line">🔄 Синхронизация…</div>
-                <div id="sync-counters">Обработано: 0 · Новых: 0 · Скачано: 0 · Ошибок: 0</div>
-                <div id="sync-track" style="color:#58a6ff;">&nbsp;</div>
-            </div>
         </div>
     </aside>
     <main class="content">
@@ -531,6 +549,22 @@ function toggleRefPanel() {
         {{end}}
     </main>
 </div>
+
+<div id="sync-modal" class="modal-overlay">
+    <div class="modal">
+        <h3>🔄 Синхронизация с Suno</h3>
+        <div id="sync-status-line" class="sync-line">
+            <span class="spinner"></span>Ожидание запуска…
+        </div>
+        <div id="sync-counters" class="sync-counters">Обработано: 0 · Новых: 0 · Скачано: 0 · Ошибок: 0</div>
+        <div id="sync-track" class="sync-track">&nbsp;</div>
+        <div class="modal-actions">
+            <button id="sync-stop-btn" class="btn btn-danger" onclick="stopSync()">⏹ Остановить</button>
+            <button class="btn" onclick="hideSyncModal()">В фоне</button>
+        </div>
+    </div>
+</div>
+
 <script>
     let syncPollTimer = null;
 
@@ -539,21 +573,36 @@ function toggleRefPanel() {
                ' · Скачано: ' + st.downloaded + ' · Ошибок: ' + st.errors;
     }
 
+    function showSyncModal() {
+        const modal = document.getElementById('sync-modal');
+        if (modal) modal.classList.add('open');
+    }
+
+    function hideSyncModal() {
+        const modal = document.getElementById('sync-modal');
+        if (modal) modal.classList.remove('open');
+    }
+
     function renderSyncStatus(st) {
-        const panel = document.getElementById('sync-progress');
         const line = document.getElementById('sync-status-line');
         const counters = document.getElementById('sync-counters');
         const track = document.getElementById('sync-track');
-        if (!panel) return;
-        panel.style.display = 'block';
-        if (st.running) {
-            line.textContent = '🔄 Синхронизация…';
+        const stopBtn = document.getElementById('sync-stop-btn');
+        if (!line) return;
+        if (st.stopped) {
+            line.innerHTML = '⏹ Остановлено';
+            if (stopBtn) stopBtn.style.display = 'none';
+        } else if (st.running) {
+            line.innerHTML = '<span class="spinner"></span>Синхронизация…';
+            if (stopBtn) stopBtn.style.display = '';
         } else if (st.error) {
-            line.textContent = '⚠️ Ошибка: ' + st.error;
+            line.innerHTML = '⚠️ Ошибка: ' + st.error;
+            if (stopBtn) stopBtn.style.display = 'none';
         } else if (st.phase === 'done' && st.processed > 0) {
-            line.textContent = '✓ Синхронизация завершена';
+            line.innerHTML = '✓ Синхронизация завершена';
+            if (stopBtn) stopBtn.style.display = 'none';
         } else {
-            line.textContent = 'Ожидание запуска…';
+            line.innerHTML = '<span class="spinner"></span>Ожидание запуска…';
         }
         counters.textContent = syncCountersText(st);
         track.textContent = st.last_track ? 'Сейчас: ' + st.last_track : ' ';
@@ -569,18 +618,19 @@ function toggleRefPanel() {
         const st = await response.json();
         renderSyncStatus(st);
         if (st.running) {
+            showSyncModal();
             syncPollTimer = setTimeout(pollSyncStatus, 1500);
         } else {
             syncPollTimer = null;
             document.getElementById('sync-btn').disabled = false;
-            if (st.error) {
-                const line = document.getElementById('sync-status-line');
-                if (line) setTimeout(() => { line.textContent = '⚠️ Ошибка: ' + st.error; }, 0);
+            if (st.stopped) {
+                setTimeout(() => hideSyncModal(), 3000);
+            } else if (st.error) {
+                showSyncModal();
             } else if (st.processed > 0) {
                 setTimeout(() => window.location.reload(), 1500);
             } else {
-                const panel = document.getElementById('sync-progress');
-                if (panel) setTimeout(() => { panel.style.display = 'none'; }, 3000);
+                setTimeout(() => hideSyncModal(), 3000);
             }
         }
     }
@@ -588,6 +638,7 @@ function toggleRefPanel() {
     function startSyncPoll() {
         document.getElementById('sync-btn').disabled = true;
         clearTimeout(syncPollTimer);
+        showSyncModal();
         syncPollTimer = setTimeout(pollSyncStatus, 300);
     }
 
@@ -595,10 +646,17 @@ function toggleRefPanel() {
         if (evt.detail.xhr.status === 409) {
             document.getElementById('sync-btn').disabled = false;
             const line = document.getElementById('sync-status-line');
-            if (line) line.textContent = '⚠️ Синхронизация уже идёт';
+            if (line) line.innerHTML = '⚠️ Синхронизация уже идёт';
+            showSyncModal();
             clearTimeout(syncPollTimer);
             syncPollTimer = setTimeout(pollSyncStatus, 1500);
         }
+    }
+
+    async function stopSync() {
+        try {
+            await fetch('/sync/stop', { method: 'POST' });
+        } catch (err) {}
     }
 
     document.addEventListener('DOMContentLoaded', () => {
