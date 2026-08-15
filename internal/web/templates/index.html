@@ -11,11 +11,11 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #0d1117; color: #c9d1d9; min-height: 100vh;
         }
-        .layout { display: flex; min-height: 100vh; }
+        .layout { display: flex; height: 100vh; overflow: hidden; }
         .sidebar {
             width: 240px; background: #161b22; border-right: 1px solid #30363d;
-            padding: 20px; flex-shrink: 0; position: sticky; top: 0; height: 100vh;
-            display: flex; flex-direction: column;
+            padding: 20px; flex-shrink: 0;
+            display: flex; flex-direction: column; min-height: 0;
         }
         .sidebar h1 { font-size: 18px; margin-bottom: 20px; color: #58a6ff; }
         .sidebar .stat { font-size: 14px; color: #8b949e; margin-bottom: 20px; }
@@ -32,9 +32,10 @@
         }
         .sidebar .nav-item:hover { background: #1c2128; color: #58a6ff; }
         .sidebar .nav-group { margin-bottom: 20px; }
+        .sidebar .nav-scroll { flex: 1; min-height: 0; overflow-y: auto; }
         .sidebar .sync-area { margin-top: auto; padding-top: 16px; }
 
-        .content { flex: 1; padding: 24px; min-width: 0; }
+        .content { flex: 1; padding: 24px; min-width: 0; overflow-y: auto; height: 100vh; }
         .content h2 { font-size: 20px; margin-bottom: 16px; }
 
         .toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
@@ -117,18 +118,20 @@
             <div>Треков: <strong>{{.TrackCount}}</strong></div>
             <div>Скачано: <strong>{{.DLCount}}</strong></div>
         </div>
-        <div class="nav-group">
-            <div class="nav-title">Библиотека</div>
-            <a href="/" class="nav-item">Все треки</a>
-        </div>
-        {{if .Workspaces}}
-        <div class="nav-group">
-            <div class="nav-title">Workspaces</div>
-            {{range .Workspaces}}
-            <a href="/?workspace={{.Name}}" class="nav-item"><span>{{.Name}}</span> <span>{{.TrackCount}}</span></a>
+        <div class="nav-scroll">
+            <div class="nav-group">
+                <div class="nav-title">Библиотека</div>
+                <a href="/" class="nav-item">Все треки</a>
+            </div>
+            {{if .Workspaces}}
+            <div class="nav-group">
+                <div class="nav-title">Workspaces</div>
+                {{range .Workspaces}}
+                <a href="/?workspace={{.Name}}" class="nav-item"><span>{{.Name}}</span> <span>{{.TrackCount}}</span></a>
+                {{end}}
+            </div>
             {{end}}
         </div>
-        {{end}}
         <div class="sync-area">
             <button class="btn btn-primary" hx-post="/sync" hx-swap="none">
                 🔄 Синхронизировать
