@@ -49,8 +49,8 @@ type noteFrontmatter struct {
 	Duration  int      `yaml:"duration"`
 }
 
-// ExportNotes writes each track as a markdown note under Vault/tracks and,
-// when Corpus is requested, regenerates the training corpus. Only notes whose
+// ExportNotes writes each track as a markdown note under Vault/tracks and
+// regenerates the training corpus under Vault/corpus. Only notes whose
 // content changed are rewritten unless Overwrite is set. Returns a summary of
 // the export run.
 func (m *Manager) ExportNotes(opts ExportOptions) (*ExportStats, error) {
@@ -69,8 +69,12 @@ func (m *Manager) ExportNotes(opts ExportOptions) (*ExportStats, error) {
 	if err := ensureVault(vault); err != nil {
 		return nil, err
 	}
-	os.MkdirAll(tracksDir, 0o755)
-	os.MkdirAll(corpusDir, 0o755)
+	if err := os.MkdirAll(tracksDir, 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(corpusDir, 0o755); err != nil {
+		return nil, err
+	}
 
 	stats := &ExportStats{}
 	manifest := loadManifest(filepath.Join(vault, exportManifestName))
@@ -93,14 +97,15 @@ func (m *Manager) ExportNotes(opts ExportOptions) (*ExportStats, error) {
 		hash := hashContent(content)
 
 		name := t.ID + ".md"
-		next[name] = hash
 		if !opts.Overwrite && manifest[name] == hash {
+			next[name] = hash
 			stats.NotesSkipped++
 		} else {
 			notePath := filepath.Join(tracksDir, name)
 			if err := os.WriteFile(notePath, []byte(content), 0o644); err != nil {
 				stats.Errors++
 			} else {
+				next[name] = hash
 				stats.NotesWritten++
 			}
 		}
@@ -175,13 +180,22 @@ func renderNote(t models.Track, lyrics string) string {
 	return b.String()
 }
 
-// writeCorpus writes corpus/all.txt and corpus/by-workspace/<ws>.txt.
+// writeCorpus regenerates the whole corpus on every run: corpus/all.txt and
+// corpus/by-workspace/<ws>.txt for each workspace, removing stale files from
+// earlier runs so renamed/deleted workspaces do not linger.
 func writeCorpus(corpusDir string, full []string, byWorkspace map[string][]string) error {
+	byWsDir := filepath.Join(corpusDir, "by-workspace")
+	if err := os.MkdirAll(byWsDir, 0o755); err != nil {
+		return err
+	}
+
+	keep := map[string]bool{}
 	if len(full) > 0 {
 		allPath := filepath.Join(corpusDir, "all.txt")
 		if err := os.WriteFile(allPath, []byte(strings.Join(full, "\n\n")+"\n"), 0o644); err != nil {
 			return err
 		}
+		keep["all.txt"] = true
 	}
 
 	workspaces := make([]string, 0, len(byWorkspace))
@@ -195,13 +209,32 @@ func writeCorpus(corpusDir string, full []string, byWorkspace map[string][]strin
 		if len(lines) == 0 {
 			continue
 		}
-		name := sanitizeDirName(ws) + ".txt"
-		if ws == "" {
-			name = "_addr.txt"
+		name := sanitizeDirName(ws)
+		if name == "" {
+			name = "Unknown"
 		}
-		path := filepath.Join(corpusDir, name)
+		path := filepath.Join(byWsDir, name+".txt")
+		keep[path] = true
 		if err := os.WriteFile(path, []byte(strings.Join(lines, "\n\n")+"\n"), 0o644); err != nil {
 			return err
+		}
+	}
+
+	for _, dir := range []string{corpusDir, byWsDir} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			if e.IsDir() || filepath.Ext(e.Name()) != ".txt" {
+				continue
+			}
+			p := filepath.Join(dir, e.Name())
+			if !keep[p] {
+				if err := os.Remove(p); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil

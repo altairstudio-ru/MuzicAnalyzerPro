@@ -2,6 +2,30 @@ package library
 
 import "testing"
 
+func TestSanitizeDirNameNoCollision(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"Поп", "Поп"},
+		{"Рок", "Рок"},
+		{"", ""},
+		{"a/b:c", "a_b_c"},
+		{"Поп Рок 2024", "Поп Рок 2024"},
+	}
+	seen := map[string]string{}
+	for _, c := range cases {
+		got := sanitizeDirName(c.in)
+		if c.want != "" && got != c.want {
+			t.Errorf("sanitizeDirName(%q) = %q, want %q", c.in, got, c.want)
+		}
+		if prev, dup := seen[got]; dup {
+			t.Errorf("collision: sanitizeDirName(%q) = %q collides with %q", c.in, got, prev)
+		}
+		seen[got] = c.in
+	}
+}
+
 func TestTrackIDFromFilename(t *testing.T) {
 	cases := []struct {
 		name string

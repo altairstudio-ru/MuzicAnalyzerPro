@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -127,17 +128,19 @@ func expandPath(path string) string {
 	return path
 }
 
-// sanitizeDirName replaces characters unsafe for directory names.
+// sanitizeDirName replaces characters unsafe for directory names. Non-ASCII
+// bytes are kept as-is (UTF-8 runes), so distinct non-ASCII names like "Поп"
+// and "Рок" do not collide.
 func sanitizeDirName(name string) string {
 	// Replace common unsafe characters
-	result := make([]byte, 0, len(name))
-	for _, c := range []byte(name) {
-		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' ||
-			c >= '0' && c <= '9' || c == '-' || c == '_' || c == ' ' || c == '.' {
-			result = append(result, c)
+	var b strings.Builder
+	for _, r := range name {
+		if r < 0x20 || r == '/' || r == '\\' || r == ':' || r == '*' ||
+			r == '?' || r == '"' || r == '<' || r == '>' || r == '|' {
+			b.WriteByte('_')
 		} else {
-			result = append(result, '_')
+			b.WriteRune(r)
 		}
 	}
-	return string(result)
+	return b.String()
 }
