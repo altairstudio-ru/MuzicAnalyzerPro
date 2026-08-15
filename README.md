@@ -71,6 +71,9 @@ make build
 # → http://localhost:8080
 ```
 
+Full web UI guide (pages, buttons, routes, troubleshooting):
+**[docs/WEB_UI.md](docs/WEB_UI.md)**
+
 ## CLI Commands
 
 | Command | Description |
