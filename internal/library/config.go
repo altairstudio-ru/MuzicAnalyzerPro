@@ -32,6 +32,11 @@ type SunoConfig struct {
 	// ExportVault optionally enables exporting tracks into an Obsidian vault.
 	// When set, sync updates markdown notes under this directory. Empty disables.
 	ExportVault string `yaml:"export_vault"`
+	// RenameOnSync moves/renames downloaded audio (and lyrics) files when a
+	// track's title or workspace changes in Suno during sync. Disabled by
+	// default so existing on-disk structure is never touched. Can be overridden
+	// per-run with the --rename-files flag.
+	RenameOnSync bool `yaml:"rename_on_sync"`
 }
 
 // LoadConfig loads configuration from the config file.

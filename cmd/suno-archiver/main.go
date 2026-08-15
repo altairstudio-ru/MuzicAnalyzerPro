@@ -58,7 +58,11 @@ To get the token:
 		Use:   "sync",
 		Short: "Sync tracks from Suno to local library",
 		Long: `Fetch all tracks from your Suno account, download audio files,
-and store everything in the local library.`,
+and store everything in the local library.
+
+Use --rename-files to also move/rename downloaded audio (and lyrics .txt)
+files when a track's title or workspace changed in Suno. Off by default;
+can be enabled permanently with rename_on_sync in config.yaml.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := library.LoadConfig(basePath)
 			if err != nil {
@@ -70,6 +74,12 @@ and store everything in the local library.`,
 				return fmt.Errorf("init library: %w", err)
 			}
 			defer mgr.Close()
+
+			if flagSet := cmd.Flags().Changed("rename-files"); flagSet {
+				mgr.RenameOnSync, _ = cmd.Flags().GetBool("rename-files")
+			} else {
+				mgr.RenameOnSync = cfg.Suno.RenameOnSync
+			}
 
 			fmt.Println("🔄 Syncing tracks from Suno...")
 			stats, err := mgr.Sync()
@@ -89,6 +99,7 @@ and store everything in the local library.`,
 			return nil
 		},
 	}
+	syncCmd.Flags().Bool("rename-files", false, "Rename/move audio files when title or workspace changed in Suno")
 
 	serveCmd := &cobra.Command{
 		Use:   "serve",

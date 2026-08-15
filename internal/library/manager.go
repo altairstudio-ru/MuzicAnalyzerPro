@@ -27,6 +27,9 @@ type Manager struct {
 	Suno   *suno.Client
 	DB     *sql.DB
 	status *SyncStatus
+	// RenameOnSync is read at sync time; when true, downloaded audio/lyrics
+	// files are moved to match the current title/workspace from the feed.
+	RenameOnSync bool
 }
 
 // SyncPhase describes the current stage of a sync run.
@@ -254,6 +257,21 @@ func (m *Manager) syncOnce() (*models.SyncStats, error) {
 				if track.Lyrics == "" {
 					track.Lyrics = existing.Lyrics
 					track.LyricsPath = existing.LyricsPath
+				}
+
+				// Rename/move the on-disk files when the title or workspace
+				// changed in Suno. No-op when nothing moved.
+				if m.RenameOnSync && existing.AudioPath != "" && audioPath != existing.AudioPath {
+					newLp, err := renameTrackFiles(existing.AudioPath, audioPath)
+					if err != nil {
+						stats.Errors++
+						log.Printf("[sync] rename %s (%s): %v", track.ID, track.Title, err)
+					} else {
+						track.AudioPath = audioPath
+						if newLp != "" {
+							track.LyricsPath = newLp
+						}
+					}
 				}
 			}
 
