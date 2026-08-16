@@ -314,6 +314,23 @@ function toggleRefPanel() {
             const el = document.getElementById('analysis-json');
             if (el) renderAnalysis(el.textContent);
         });
+        async function addDetailLabel(ev, trackID) {
+            ev.preventDefault();
+            const sel = document.getElementById('detail-label-sel');
+            const addID = sel.value;
+            if (!addID) { alert('Выберите метку'); return; }
+            try {
+                const cur = await (await fetch('/api/tracks/' + trackID + '/labels')).json();
+                const ids = [...new Set([...cur.map(l => l.id), addID])];
+                const r = await fetch('/api/tracks/' + trackID + '/labels', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ label_ids: ids })
+                });
+                if (r.ok) location.reload();
+                else { const j = await r.json(); alert('Ошибка: ' + (j.error || r.status)); }
+            } catch (e) { alert('Ошибка: ' + e.message); }
+        }
     </script>
 </head>
 <body>
@@ -405,6 +422,47 @@ function toggleRefPanel() {
                 <p>Дата: {{.CreatedAt}}</p>
                 <p>Путь: {{.AudioPath}}</p>
                 <p><a href="https://suno.com/song/{{.ID}}" target="_blank" rel="noopener" style="color:#ffb454;">🔗 Открыть трек на Suno</a></p>
+            </div>
+
+            <div class="section">
+                <h3>Метки</h3>
+                {{$tid := .ID}}
+                {{if index $.TrackLabels $tid}}
+                <div class="tag-list">
+                    {{range index $.TrackLabels $tid}}<span class="tag lbl-tag" style="--lbl:{{.Color}}">{{.Name}}</span>{{end}}
+                </div>
+                {{else}}
+                <p style="color:var(--text-faint)">— нет меток —</p>
+                {{end}}
+                <form class="inline-edit" onsubmit="addDetailLabel(event,'{{$tid}}')">
+                    <select id="detail-label-sel">
+                        <option value="">— метка —</option>
+                        {{range $.Labels}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+                    </select>
+                    <button class="btn btn-copy" type="submit">+ Пометить</button>
+                </form>
+            </div>
+
+            <div class="section">
+                <h3>Сборники</h3>
+                {{if index $.TrackAlbums $tid}}
+                <div class="tag-list">
+                    {{range index $.TrackAlbums $tid}}<a class="album-chip" href="/collections/{{.ID}}">🗂 {{.Title}}</a>{{end}}
+                </div>
+                {{else}}
+                <p style="color:var(--text-faint)">— не входит в сборники —</p>
+                {{end}}
+            </div>
+
+            <div class="section">
+                <h3>Варианты</h3>
+                {{if $.TrackGroups}}
+                <div class="tag-list">
+                    {{range $.TrackGroups}}<a class="album-chip" href="/variants/{{.ID}}">🔀 {{.Name}} ({{.TrackCount}})</a>{{end}}
+                </div>
+                {{else}}
+                <p style="color:var(--text-faint)">— нет групп вариантов —</p>
+                {{end}}
             </div>
         </div>
 

@@ -233,6 +233,34 @@ func (s *Server) apiReorderAlbumTracks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"reordered": true})
 }
 
+func (s *Server) apiBulkAddAlbumTracks(w http.ResponseWriter, r *http.Request) {
+	albumID := chi.URLParam(r, "id")
+	var req struct {
+		TrackIDs []string `json:"track_ids"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if albumID == "" {
+		writeErr(w, http.StatusBadRequest, "album id is required")
+		return
+	}
+	existing, err := db.GetAlbumWithTracks(s.DB, albumID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if existing == nil {
+		writeErr(w, http.StatusNotFound, "album not found")
+		return
+	}
+	if err := db.AddTracksToAlbum(s.DB, albumID, req.TrackIDs); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"added": len(req.TrackIDs)})
+}
+
 // ---------------------------------------------------------------------------
 // Labels
 
@@ -324,6 +352,34 @@ func (s *Server) apiSetTrackLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"updated": true})
+}
+
+func (s *Server) apiBulkSetLabels(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		TrackIDs []string `json:"track_ids"`
+		LabelID  string   `json:"label_id"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.LabelID == "" {
+		writeErr(w, http.StatusBadRequest, "label_id is required")
+		return
+	}
+	label, err := db.GetLabel(s.DB, req.LabelID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if label == nil {
+		writeErr(w, http.StatusNotFound, "label not found")
+		return
+	}
+	if err := db.AddLabelToTracks(s.DB, req.TrackIDs, req.LabelID); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"labeled": len(req.TrackIDs)})
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔀 {{.VariantGroup.Group.Name}} — Suno Archiver</title>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <h1><a href="/">🎵 Suno Archiver</a></h1>
+        <div class="stat">
+            <div>Треков: <strong>{{.TrackCount}}</strong></div>
+            <div>Скачано: <strong>{{.DLCount}}</strong></div>
+        </div>
+        <div class="nav-group">
+            <div class="nav-title">Библиотека</div>
+            <a href="/" class="nav-item">← Все треки</a>
+        </div>
+        {{if .Workspaces}}
+        <div class="nav-group">
+            <div class="nav-title">Workspaces</div>
+            {{range .Workspaces}}
+            <a href="/?workspace={{.Name}}" class="nav-item"><span>{{.Name}}</span> <span>{{.TrackCount}}</span></a>
+            {{end}}
+        </div>
+        {{end}}
+        <div class="sync-area">
+            <button id="sync-btn" class="btn btn-primary" hx-post="/sync" hx-swap="none"
+                    hx-on::before-request="startSyncPoll()"
+                    hx-on::after-request="syncAfterRequest(event)">
+                🔄 Синхронизировать
+            </button>
+        </div>
+    </aside>
+    <main class="content">
+        <div class="detail-card" style="max-width:900px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+                <div>
+                    <h1>🔀 {{.VariantGroup.Group.Name}}</h1>
+                    <div class="sub">{{if .VariantGroup.Group.Notes}}{{.VariantGroup.Group.Notes}} · {{end}}{{len .VariantGroup.Tracks}} вариантов</div>
+                </div>
+                {{if .HasDownloaded}}
+                <button class="btn btn-primary" onclick="startCompare()">⚡ Сравнить варианты</button>
+                {{else}}
+                <span class="hint">нет скачанных треков — сравнение недоступно</span>
+                {{end}}
+            </div>
+
+            <div id="compare-progress" class="compare-progress" hidden></div>
+
+            <div class="section-head" style="margin-top:18px;">
+                <h2 style="font-size:15px;">Сравнение по быстрому анализу</h2>
+            </div>
+            <div id="compare-rendered">
+                <p style="color:var(--text-faint);font-size:13px">Загрузка…</p>
+            </div>
+
+            <div class="section-head" style="margin-top:24px;">
+                <h2 style="font-size:15px;">Участники группы</h2>
+            </div>
+            <div class="checklist">
+                <div class="tracklist-header"><span>#</span><span>Трек</span><span class="tl-actions">Статус</span></div>
+                {{range .VariantGroup.Tracks}}
+                <div class="tracklist-row {{if eq .ID $.VariantGroup.Group.BestTrackID}}best-row{{end}}">
+                    <span class="pos">{{if eq .ID $.VariantGroup.Group.BestTrackID}}★{{else}}·{{end}}</span>
+                    <span class="tl-title">
+                        <a href="/tracks/{{.ID}}">{{.Title}}</a>
+                        {{if .Artist}}<span class="tl-artist">{{.Artist}}</span>{{end}}
+                        {{if eq .ID $.VariantGroup.Group.BestTrackID}}<span class="tag lbl-tag" style="--lbl:#6ee7a0">best</span>{{end}}
+                    </span>
+                    <span class="tl-actions">
+                        <span class="badge-dl {{if .IsDownloaded}}yes{{else}}no{{end}}">{{if .IsDownloaded}}✓ скачано{{else}}✗{{end}}</span>
+                        {{if .IsDownloaded}}
+                        {{if ne .ID $.VariantGroup.Group.BestTrackID}}<button class="btn-copy" onclick="setBest('{{.ID}}')">★ Сделать лучшим</button>{{end}}
+                        {{end}}
+                    </span>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </main>
+</div>
+
+<div id="sync-modal" class="modal-overlay">
+    <div class="modal">
+        <h3>🔄 Синхронизация с Suno</h3>
+        <div id="sync-status-line" class="sync-line"><span class="spinner"></span>Ожидание запуска…</div>
+        <div id="sync-counters" class="sync-counters">Обработано: 0 · Новых: 0 · Скачано: 0 · Ошибок: 0</div>
+        <div id="sync-track" class="sync-track">&nbsp;</div>
+        <div class="modal-actions">
+            <button id="sync-stop-btn" class="btn btn-danger" onclick="stopSync()">⏹ Остановить</button>
+            <button class="btn" onclick="hideSyncModal()">В фоне</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let syncPollTimer = null;
+    function syncCountersText(st) {
+        return 'Обработано: ' + st.processed + ' · Новых: ' + st.new +
+               ' · Скачано: ' + st.downloaded + ' · Ошибок: ' + st.errors;
+    }
+    function showSyncModal() { document.getElementById('sync-modal').classList.add('open'); }
+    function hideSyncModal() { document.getElementById('sync-modal').classList.remove('open'); }
+    function renderSyncStatus(st) {
+        const line = document.getElementById('sync-status-line');
+        const counters = document.getElementById('sync-counters');
+        const track = document.getElementById('sync-track');
+        const stopBtn = document.getElementById('sync-stop-btn');
+        if (!line) return;
+        if (st.waiting_auth) {
+            line.innerHTML = '<span class="spinner"></span>⏳ Токен истёк — обновите его в расширении Chrome';
+            if (stopBtn) stopBtn.style.display = '';
+        } else if (st.stopped) {
+            line.innerHTML = '⏹ Остановлено';
+            if (stopBtn) stopBtn.style.display = 'none';
+        } else if (st.running) {
+            line.innerHTML = '<span class="spinner"></span>Синхронизация…';
+            if (stopBtn) stopBtn.style.display = '';
+        } else if (st.error) {
+            line.innerHTML = '⚠️ Ошибка: ' + st.error;
+            if (stopBtn) stopBtn.style.display = 'none';
+        } else if (st.phase === 'done' && st.processed > 0) {
+            line.innerHTML = '✓ Синхронизация завершена';
+            if (stopBtn) stopBtn.style.display = 'none';
+        } else {
+            line.innerHTML = '<span class="spinner"></span>Ожидание запуска…';
+        }
+        counters.textContent = syncCountersText(st);
+        track.textContent = st.last_track ? 'Сейчас: ' + st.last_track : ' ';
+    }
+    async function pollSyncStatus() {
+        let response;
+        try { response = await fetch('/api/sync-status'); } catch (err) { return; }
+        const st = await response.json();
+        renderSyncStatus(st);
+        if (st.running) {
+            showSyncModal();
+            syncPollTimer = setTimeout(pollSyncStatus, 1500);
+        } else {
+            syncPollTimer = null;
+            document.getElementById('sync-btn').disabled = false;
+            if (st.stopped) setTimeout(() => hideSyncModal(), 3000);
+            else if (st.error) showSyncModal();
+            else if (st.processed > 0) setTimeout(() => window.location.reload(), 1500);
+            else setTimeout(() => hideSyncModal(), 3000);
+        }
+    }
+    function startSyncPoll() {
+        document.getElementById('sync-btn').disabled = true;
+        clearTimeout(syncPollTimer);
+        showSyncModal();
+        syncPollTimer = setTimeout(pollSyncStatus, 300);
+    }
+    function syncAfterRequest(evt) {
+        if (evt.detail.xhr.status === 409) {
+            document.getElementById('sync-btn').disabled = false;
+            const line = document.getElementById('sync-status-line');
+            if (line) line.innerHTML = '⚠️ Синхронизация уже идёт';
+            clearTimeout(syncPollTimer);
+            syncPollTimer = setTimeout(pollSyncStatus, 1500);
+        }
+    }
+    async function stopSync() { try { await fetch('/sync/stop', { method: 'POST' }); } catch (e) {} }
+    document.addEventListener('DOMContentLoaded', () => {
+        clearTimeout(syncPollTimer);
+        syncPollTimer = setTimeout(pollSyncStatus, 300);
+    });
+
+    // ---------- Compare variants ----------
+
+    const GROUP_ID = '{{.VariantGroup.Group.ID}}';
+    let compareTimer = null;
+
+    function escapeHtml(s) {
+        if (typeof s !== 'string') return String(s == null ? '' : s);
+        return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function fmt(v) {
+        return (typeof v === 'number' && isFinite(v)) ? v.toFixed(1) : '—';
+    }
+    function scoreColor(v) {
+        if (v >= 7) return 'var(--ok)';
+        if (v >= 4) return 'var(--warn)';
+        return 'var(--err)';
+    }
+
+    function renderCompareProgress(p) {
+        const el = document.getElementById('compare-progress');
+        if (!el) return;
+        if (p.running) {
+            el.hidden = false;
+            el.innerHTML = '<span class="spinner"></span>Сравниваю: <strong>' + p.processed + ' / ' + p.total + '</strong>'
+                + (p.current ? ' — <span class="now">' + escapeHtml(p.current) + '</span>' : '');
+            return;
+        }
+        el.hidden = true;
+        if (p.error) {
+            el.hidden = false;
+            el.className = 'compare-progress err';
+            el.innerHTML = '⚠️ Ошибка анализа: ' + escapeHtml(p.error);
+        }
+    }
+
+    function renderCompareTable(p) {
+        const el = document.getElementById('compare-rendered');
+        if (!el) return;
+        if (!p.rows || p.rows.length === 0) {
+            el.innerHTML = '<p style="color:var(--text-faint);font-size:13px">Нет данных. Нажмите «Сравнить варианты».</p>';
+            return;
+        }
+        const rows = p.rows.map(r => {
+            const has = r.overall_score >= 0 && r.result_status === 'done';
+            const score = has ? r.overall_score.toFixed(1) : '—';
+            const color = has ? scoreColor(r.overall_score) : '';
+            const action = p.running ? '<td class="muted"></td>' : (r.best
+                ? '<td><span class="tag lbl-tag" style="--lbl:#6ee7a0">✓ best</span></td>'
+                : '<td><button class="btn-copy" onclick="setBest(\'' + r.track_id + '\')">★ Сделать лучшим</button></td>');
+            return '<tr class="' + (r.best ? 'best-row' : '') + '">'
+                + '<td><a href="/tracks/' + r.track_id + '">' + escapeHtml(r.title) + '</a>'
+                + (r.artist ? '<span class="muted"> — ' + escapeHtml(r.artist) + '</span>' : '') + '</td>'
+                + '<td style="font-weight:600;color:' + color + '">' + score + '</td>'
+                + '<td>' + escapeHtml(r.mix_quality || '—') + '</td>'
+                + '<td>' + (r.critical_issues || 0) + '</td>'
+                + '<td>' + fmt(r.lufs) + '</td>'
+                + '<td>' + fmt(r.dynamic_range) + '</td>'
+                + action
+                + '</tr>';
+        }).join('');
+        el.innerHTML = '<table class="compare-table"><thead><tr>'
+            + '<th>Трек</th><th>Score</th><th>Микс</th><th>Критич.</th><th>LUFS</th><th>DR</th><th></th>'
+            + '</tr></thead><tbody>' + rows + '</tbody></table>';
+    }
+
+    async function pollCompare() {
+        try {
+            const r = await fetch('/api/variant-groups/' + GROUP_ID + '/compare-status');
+            if (!r.ok) { compareTimer = setTimeout(pollCompare, 5000); return; }
+            const p = await r.json();
+            renderCompareProgress(p);
+            renderCompareTable(p);
+            if (p.running) compareTimer = setTimeout(pollCompare, 2500);
+        } catch (e) {
+            compareTimer = setTimeout(pollCompare, 5000);
+        }
+    }
+
+    async function startCompare() {
+        try {
+            const r = await fetch('/api/variant-groups/' + GROUP_ID + '/compare', { method: 'POST' });
+            if (!r.ok) { const j = await r.json().catch(() => ({})); alert('Ошибка: ' + (j.error || r.status)); return; }
+            clearTimeout(compareTimer);
+            pollCompare();
+        } catch (e) { alert('Ошибка: ' + e.message); }
+    }
+
+    async function setBest(trackID) {
+        try {
+            const r = await fetch('/api/variant-groups/' + GROUP_ID + '/best', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ track_id: trackID })
+            });
+            if (r.ok) location.reload();
+            else { const j = await r.json(); alert('Ошибка: ' + (j.error || r.status)); }
+        } catch (e) { alert('Ошибка: ' + e.message); }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        clearTimeout(compareTimer);
+        pollCompare();
+    });
+</script>
+</body>
+</html>

@@ -43,6 +43,9 @@ type Server struct {
 	scraperCfg scraper.ScrapeConfig
 	scraper    *scraper.SunoScraper
 	scraperMu  sync.Mutex
+
+	compareMu    sync.Mutex
+	compareState map[string]*compareState
 }
 
 // pageData holds common data available to all templates.
@@ -55,12 +58,24 @@ type pageData struct {
 	Filter         models.TrackFilter
 	Search         string
 	AnalysisResult *db.AnalysisResult
+
+	// Catalog UI extensions.
+	Albums       []models.Album
+	Labels       []models.Label
+	TrackAlbums  map[string][]models.Album
+	TrackLabels  map[string][]models.Label
+	Suggestions  []models.VariantSuggestion
+	Album        *models.AlbumWithTracks
+	VariantGroup *models.VariantGroupDetail
+	TrackGroups  []models.VariantGroup
+	HasDownloaded bool
 }
 
 // NewServer creates a new web server with the given library manager.
 func NewServer(mgr *library.Manager) (*Server, error) {
 	funcMap := template.FuncMap{
-		"formatLyrics": formatLyrics,
+		"formatLyrics":  formatLyrics,
+		"formatSeconds": formatSeconds,
 	}
 	tmpl := template.Must(template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html"))
 
@@ -80,6 +95,7 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 		Tmpl:       tmpl,
 		Analyzer:   anz,
 		scraperCfg: scraperCfg,
+		compareState: map[string]*compareState{},
 	}
 
 	s.Router.Use(middleware.Logger)
@@ -87,6 +103,8 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 
 	s.Router.Get("/", s.dashboard)
 	s.Router.Get("/tracks/{id}", s.trackDetail)
+	s.Router.Get("/collections/{id}", s.collectionPage)
+	s.Router.Get("/variants/{id}", s.variantPage)
 	s.Router.Post("/sync", s.triggerSync)
 	s.Router.Post("/sync/stop", s.stopSync)
 	s.Router.Get("/api/sync-status", s.syncStatusHandler)
@@ -114,6 +132,7 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 		r.Patch("/albums/{id}/tracks/{track_id}", s.apiUpdateAlbumTrack)
 		r.Delete("/albums/{id}/tracks/{track_id}", s.apiRemoveAlbumTrack)
 		r.Post("/albums/{id}/reorder", s.apiReorderAlbumTracks)
+		r.Post("/albums/{id}/tracks/bulk", s.apiBulkAddAlbumTracks)
 
 		r.Get("/labels", s.apiListLabels)
 		r.Post("/labels", s.apiCreateLabel)
@@ -121,6 +140,7 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 		r.Delete("/labels/{label_id}", s.apiDeleteLabel)
 		r.Get("/tracks/{id}/labels", s.apiGetTrackLabels)
 		r.Put("/tracks/{id}/labels", s.apiSetTrackLabels)
+		r.Post("/tracks/bulk-labels", s.apiBulkSetLabels)
 
 		r.Get("/variant-groups/suggestions", s.apiVariantSuggestions)
 		r.Get("/variant-groups", s.apiListVariantGroups)
@@ -131,6 +151,8 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 		r.Post("/variant-groups/{id}/tracks/{track_id}", s.apiAddVariantTrack)
 		r.Delete("/variant-groups/{id}/tracks/{track_id}", s.apiRemoveVariantTrack)
 		r.Post("/variant-groups/{id}/best", s.apiSetBestTrack)
+		r.Post("/variant-groups/{id}/compare", s.apiCompareVariantGroup)
+		r.Get("/variant-groups/{id}/compare-status", s.apiVariantCompareStatus)
 	})
 
 	// Static assets (style.css, woff2 fonts).
@@ -150,6 +172,8 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	filter := models.TrackFilter{
 		Workspace: r.URL.Query().Get("workspace"),
 		Search:    r.URL.Query().Get("search"),
+		Label:     r.URL.Query().Get("label"),
+		AlbumID:    r.URL.Query().Get("collection"),
 		Limit:     100,
 	}
 
@@ -159,13 +183,25 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	albums, _ := db.ListAlbums(s.DB)
+	labels, _ := db.ListLabels(s.DB)
+	suggestions, _ := db.SuggestVariantGroups(s.DB)
+	trackIDs := idsOf(tracks)
+	trackLabels, _ := db.GetLabelsForTracks(s.DB, trackIDs)
+	trackAlbums, _ := db.GetAlbumsForTracks(s.DB, trackIDs)
+
 	data := pageData{
-		TrackCount: trackCount,
-		DLCount:    dlCount,
-		Workspaces: workspaces,
-		Tracks:     tracks,
-		Filter:     filter,
-		Search:     filter.Search,
+		TrackCount:  trackCount,
+		DLCount:     dlCount,
+		Workspaces:  workspaces,
+		Tracks:      tracks,
+		Filter:      filter,
+		Search:      filter.Search,
+		Albums:      albums,
+		Labels:      labels,
+		TrackAlbums: trackAlbums,
+		TrackLabels: trackLabels,
+		Suggestions: suggestions,
 	}
 
 	s.render(w, "index.html", data)
@@ -188,6 +224,11 @@ func (s *Server) trackDetail(w http.ResponseWriter, r *http.Request) {
 
 	allTracks, _ := db.ListTracks(s.DB, models.TrackFilter{Limit: 200})
 
+	trackLabels, _ := db.GetTrackLabels(s.DB, id)
+	labels, _ := db.ListLabels(s.DB)
+	trackAlbumsMap, _ := db.GetAlbumsForTracks(s.DB, []string{id})
+	trackGroups, _ := db.GetGroupsForTrack(s.DB, id)
+
 	data := pageData{
 		TrackCount:     trackCount,
 		DLCount:        dlCount,
@@ -195,9 +236,78 @@ func (s *Server) trackDetail(w http.ResponseWriter, r *http.Request) {
 		Tracks:         []models.Track{*track},
 		AllTracks:      allTracks,
 		AnalysisResult: analysisResult,
+		Labels:         labels,
+		TrackLabels:    map[string][]models.Label{id: trackLabels},
+		TrackAlbums:    trackAlbumsMap,
+		TrackGroups:    trackGroups,
 	}
 
 	s.render(w, "detail.html", data)
+}
+
+// collectionPage renders one album/collection with its ordered tracklist.
+func (s *Server) collectionPage(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	album, err := db.GetAlbumWithTracks(s.DB, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if album == nil {
+		http.Error(w, "Collection not found", http.StatusNotFound)
+		return
+	}
+
+	trackCount, _ := db.GetTrackCount(s.DB)
+	dlCount, _ := db.GetDownloadedCount(s.DB)
+	workspaces, _ := db.ListWorkspaces(s.DB)
+	allTracks, _ := db.ListTracks(s.DB, models.TrackFilter{Limit: 200})
+
+	data := pageData{
+		TrackCount: trackCount,
+		DLCount:    dlCount,
+		Workspaces: workspaces,
+		AllTracks:  allTracks,
+		Album:      album,
+	}
+
+	s.render(w, "collection.html", data)
+}
+
+// variantPage renders a variant group with its members and compare UI.
+func (s *Server) variantPage(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	group, err := db.GetVariantGroupDetail(s.DB, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if group == nil {
+		http.Error(w, "Variant group not found", http.StatusNotFound)
+		return
+	}
+
+	trackCount, _ := db.GetTrackCount(s.DB)
+	dlCount, _ := db.GetDownloadedCount(s.DB)
+	workspaces, _ := db.ListWorkspaces(s.DB)
+
+	hasDownloaded := false
+	for _, t := range group.Tracks {
+		if t.IsDownloaded {
+			hasDownloaded = true
+			break
+		}
+	}
+
+	data := pageData{
+		TrackCount:    trackCount,
+		DLCount:       dlCount,
+		Workspaces:    workspaces,
+		VariantGroup:  group,
+		HasDownloaded: hasDownloaded,
+	}
+
+	s.render(w, "variants.html", data)
 }
 
 // triggerSync starts a sync operation.
@@ -701,4 +811,30 @@ func formatLyrics(text string) template.HTML {
 	// Escape HTML, then replace newlines with <br>
 	escaped := template.HTMLEscapeString(text)
 	return template.HTML(strings.ReplaceAll(escaped, "\n", "<br>"))
+}
+
+// formatSeconds converts a duration in seconds to a compact human label.
+func formatSeconds(sec int) string {
+	if sec <= 0 {
+		return ""
+	}
+	h := sec / 3600
+	m := (sec % 3600) / 60
+	s := sec % 60
+	if h > 0 {
+		return fmt.Sprintf("%dh%02dм", h, m)
+	}
+	if m > 0 {
+		return fmt.Sprintf("%dм%02dс", m, s)
+	}
+	return fmt.Sprintf("%dс", s)
+}
+
+// idsOf extracts track IDs from a track slice.
+func idsOf(tracks []models.Track) []string {
+	out := make([]string, 0, len(tracks))
+	for _, t := range tracks {
+		out = append(out, t.ID)
+	}
+	return out
 }

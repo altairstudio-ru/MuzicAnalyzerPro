@@ -232,3 +232,32 @@ func SuggestVariantGroups(db *sql.DB) ([]models.VariantSuggestion, error) {
 	}
 	return out, rows.Err()
 }
+
+// GetGroupsForTrack returns the variant groups a track belongs to, with counts.
+func GetGroupsForTrack(db *sql.DB, trackID string) ([]models.VariantGroup, error) {
+	rows, err := db.Query(`
+		SELECT g.id, g.name, g.notes, g.best_track_id, g.created_at, g.updated_at,
+		       (SELECT COUNT(*) FROM variant_group_tracks gt WHERE gt.group_id = g.id)
+		FROM variant_group_tracks vgt
+		JOIN variant_groups g ON g.id = vgt.group_id
+		WHERE vgt.track_id = ?
+		ORDER BY g.updated_at DESC`, trackID)
+	if err != nil {
+		return nil, fmt.Errorf("get groups for track: %w", err)
+	}
+	defer rows.Close()
+
+	groups := []models.VariantGroup{}
+	for rows.Next() {
+		g := models.VariantGroup{}
+		if err := rows.Scan(&g.ID, &g.Name, &g.Notes, &g.BestTrackID,
+			&g.CreatedAt, &g.UpdatedAt, &g.TrackCount); err != nil {
+			return nil, fmt.Errorf("scan group for track: %w", err)
+		}
+		groups = append(groups, g)
+	}
+	if groups == nil {
+		groups = []models.VariantGroup{}
+	}
+	return groups, rows.Err()
+}

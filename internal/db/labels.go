@@ -201,3 +201,66 @@ func ListTracksByLabel(db *sql.DB, label string, filter models.TrackFilter) ([]m
 	filter.Label = label
 	return ListTracks(db, filter)
 }
+
+// GetLabelsForTracks returns a map track ID -> labels assigned to it.
+// Batch counterpart of GetTrackLabels, used for list pages.
+func GetLabelsForTracks(db *sql.DB, trackIDs []string) (map[string][]models.Label, error) {
+	out := map[string][]models.Label{}
+	if len(trackIDs) == 0 {
+		return out, nil
+	}
+	phs := make([]string, len(trackIDs))
+	args := make([]any, len(trackIDs))
+	for i, id := range trackIDs {
+		phs[i] = "?"
+		args[i] = id
+	}
+	rows, err := db.Query(`
+		SELECT tl.track_id, l.id, l.name, l.color, l.created_at,
+		       (SELECT COUNT(*) FROM track_labels t2 WHERE t2.label_id = l.id)
+		FROM track_labels tl
+		JOIN labels l ON l.id = tl.label_id
+		WHERE tl.track_id IN (`+strings.Join(phs, ",")+`)
+		ORDER BY l.name COLLATE NOCASE`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get labels for tracks: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var trackID string
+		l := models.Label{}
+		if err := rows.Scan(&trackID, &l.ID, &l.Name, &l.Color, &l.CreatedAt, &l.TrackCount); err != nil {
+			return nil, fmt.Errorf("scan label for track: %w", err)
+		}
+		out[trackID] = append(out[trackID], l)
+	}
+	return out, rows.Err()
+}
+
+// AddLabelToTracks appends (idempotently) a label to many tracks at once.
+func AddLabelToTracks(db *sql.DB, trackIDs []string, labelID string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin add label to tracks: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, id := range trackIDs {
+		if id == "" {
+			continue
+		}
+		if _, err := tx.Exec(`
+			INSERT OR IGNORE INTO track_labels (track_id, label_id) VALUES (?, ?)`,
+			id, labelID); err != nil {
+			if isForeignKeyError(err) {
+				return fmt.Errorf("add label to tracks: track or label does not exist")
+			}
+			return fmt.Errorf("add label %q to track %q: %w", labelID, id, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit add label to tracks: %w", err)
+	}
+	return nil
+}

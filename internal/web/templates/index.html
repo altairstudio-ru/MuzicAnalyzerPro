@@ -46,17 +46,71 @@
             </form>
         </div>
         <div class="filters">
-            <a href="/" class="filter-chip{{if not .Filter.Workspace}} active{{end}}">Все</a>
+            <a href="/" class="filter-chip{{if not .Filter.Workspace}}{{if not .Filter.Label}} active{{end}}{{end}}">Все</a>
             {{range .Workspaces}}
             <a href="/?workspace={{.Name}}" class="filter-chip{{if eq $.Filter.Workspace .Name}} active{{end}}">{{.Name}}</a>
             {{end}}
+            {{range .Labels}}
+            <a href="/?label={{.Name}}" class="filter-chip label-chip{{if eq $.Filter.Label .Name}} active{{end}}">
+                <span class="dot" style="background:{{.Color}}"></span>{{.Name}}<span class="count">{{.TrackCount}}</span>
+            </a>
+            {{end}}
+            <button class="filter-chip" onclick="newLabel()" title="Создать метку">+</button>
+        </div>
+
+        {{if .Albums}}
+        <div class="section-head">
+            <h2>Сборники</h2>
+            <button class="btn btn-copy" onclick="newAlbum()">+ Сборник</button>
+        </div>
+        <div class="album-feed">
+            {{range .Albums}}
+            <a class="album-card" href="/collections/{{.ID}}">
+                <div class="album-kind">{{.Kind}}</div>
+                <div class="album-title">{{.Title}}</div>
+                <div class="album-meta">{{.TrackCount}} треков</div>
+            </a>
+            {{end}}
+        </div>
+        {{end}}
+
+        {{if .Suggestions}}
+        <div class="section-head">
+            <h2>Возможные варианты</h2>
+        </div>
+        <div class="suggestion-list">
+            {{range .Suggestions}}
+            <div class="suggestion-row" data-title="{{.Title}}" data-ids="{{range .TrackIDs}}{{.}},{{end}}">
+                <div class="suggestion-title">{{.Title}} <span class="count">{{len .TrackIDs}}{{if not .AllDownloaded}}<span class="warn" title="не все скачаны">*</span>{{end}}</span></div>
+                <button class="btn btn-copy" onclick="createSuggestGroup(this)">📦 Создать группу</button>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+
+        <div id="bulk-bar" class="bulk-bar" hidden>
+            <span>Выбрано: <strong id="bulk-count">0</strong></span>
+            <span class="bulk-action">
+                <select id="bulk-album"><option value="">🗂 Сборник…</option>{{range .Albums}}<option value="{{.ID}}">{{.Title}}</option>{{end}}</select>
+                <input id="bulk-album-new" placeholder="или новое название" size="14">
+                <button class="btn btn-copy" onclick="bulkToAlbum()" title="Добавить выбранные в сборник">➜</button>
+            </span>
+            <span class="bulk-action">
+                <select id="bulk-label"><option value="">🏷 Метка…</option>{{range .Labels}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
+                <input id="bulk-label-new" placeholder="или новая метка" size="14">
+                <button class="btn btn-copy" onclick="bulkToLabel()" title="Пометить выбранные">➜</button>
+            </span>
+            <button class="btn btn-copy" onclick="bulkReset()">✕</button>
         </div>
 
         {{if .Tracks}}
         <div id="track-list">
             {{range .Tracks}}
             <div class="track-item">
-                <div class="title"><a href="/tracks/{{.ID}}">{{.Title}}</a></div>
+                <div class="track-head">
+                    <input type="checkbox" class="track-check" value="{{.ID}}" aria-label="Выбрать трек">
+                    <div class="title"><a href="/tracks/{{.ID}}">{{.Title}}</a></div>
+                </div>
                 {{if .Artist}}<div class="artist">{{.Artist}}</div>{{end}}
                 <div class="meta">
                     <span class="badge-ws">{{.Workspace}}</span>
@@ -66,9 +120,19 @@
                     </span>
                     {{if .FileSize}}<span>{{.FileSize}} bytes</span>{{end}}
                 </div>
+                {{if index $.TrackLabels .ID}}
+                <div class="tag-list">
+                    {{range index $.TrackLabels .ID}}<span class="tag lbl-tag" style="--lbl:{{.Color}}">{{.Name}}</span>{{end}}
+                </div>
+                {{end}}
                 {{if .Tags}}
                 <div class="tag-list">
                     {{range .Tags}}<span class="tag">{{.}}</span>{{end}}
+                </div>
+                {{end}}
+                {{if index $.TrackAlbums .ID}}
+                <div class="album-chips">
+                    {{range index $.TrackAlbums .ID}}<a class="album-chip" href="/collections/{{.ID}}">🗂 {{.Title}}</a>{{end}}
                 </div>
                 {{end}}
                 {{if .IsDownloaded}}
@@ -205,6 +269,89 @@
         clearTimeout(syncPollTimer);
         syncPollTimer = setTimeout(pollSyncStatus, 300);
     });
+
+    // ---------- Catalog: labels, collections, variants, bulk ----------
+
+    function posting(url, body) {
+        return fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+    }
+    async function createResource(url, body) {
+        const r = await posting(url, body);
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        return j;
+    }
+
+    function checkedTrackIDs() {
+        return [...document.querySelectorAll('.track-check:checked')].map(c => c.value);
+    }
+    function updateBulk() {
+        const bar = document.getElementById('bulk-bar');
+        if (!bar) return;
+        const n = checkedTrackIDs().length;
+        bar.hidden = n === 0;
+        document.getElementById('bulk-count').textContent = n;
+    }
+    document.addEventListener('change', e => {
+        if (e.target.classList && e.target.classList.contains('track-check')) updateBulk();
+    });
+    function bulkReset() {
+        document.querySelectorAll('.track-check:checked').forEach(c => c.checked = false);
+        updateBulk();
+    }
+    async function bulkToAlbum() {
+        let albumID = document.getElementById('bulk-album').value;
+        const title = document.getElementById('bulk-album-new').value.trim();
+        const ids = checkedTrackIDs();
+        if (!ids.length) return;
+        try {
+            if (!albumID && title) albumID = (await createResource('/api/albums', { title })).id;
+            if (!albumID) { alert('Выберите сборник или введите название нового'); return; }
+            await posting('/api/albums/' + albumID + '/tracks/bulk', { track_ids: ids });
+            location.reload();
+        } catch (e) { alert('Ошибка: ' + e.message); }
+    }
+    async function bulkToLabel() {
+        let labelID = document.getElementById('bulk-label').value;
+        const name = document.getElementById('bulk-label-new').value.trim();
+        const ids = checkedTrackIDs();
+        if (!ids.length) return;
+        try {
+            if (!labelID && name) labelID = (await createResource('/api/labels', { name })).id;
+            if (!labelID) { alert('Выберите метку или введите новую'); return; }
+            await posting('/api/tracks/bulk-labels', { track_ids: ids, label_id: labelID });
+            location.reload();
+        } catch (e) { alert('Ошибка: ' + e.message); }
+    }
+    async function newAlbum() {
+        const title = prompt('Название нового сборника');
+        if (!title) return;
+        try { await createResource('/api/albums', { title }); location.reload(); }
+        catch (e) { alert('Ошибка: ' + e.message); }
+    }
+    async function newLabel() {
+        const name = prompt('Название новой метки');
+        if (!name) return;
+        try { await createResource('/api/labels', { name }); location.reload(); }
+        catch (e) { alert('Ошибка: ' + e.message); }
+    }
+    async function createSuggestGroup(btn) {
+        const row = btn.closest('.suggestion-row');
+        const title = row.dataset.title;
+        const ids = row.dataset.ids.split(',').filter(Boolean);
+        if (!ids.length) return;
+        try {
+            const g = await createResource('/api/variant-groups', { name: title, notes: 'auto-suggestion' });
+            for (const id of ids) {
+                await posting('/api/variant-groups/' + g.id + '/tracks/' + id, {});
+            }
+            location.href = '/variants/' + g.id;
+        } catch (e) { alert('Ошибка: ' + e.message); }
+    }
 </script>
 </body>
 </html>

@@ -263,3 +263,80 @@ func ListTracksByAlbum(db *sql.DB, albumID string, filter models.TrackFilter) ([
 	filter.AlbumID = albumID
 	return ListTracks(db, filter)
 }
+
+// GetAlbumsForTracks returns a map track ID -> the albums it belongs to.
+// Batch counterpart of album membership shown in track lists and detail pages.
+func GetAlbumsForTracks(db *sql.DB, trackIDs []string) (map[string][]models.Album, error) {
+	out := map[string][]models.Album{}
+	if len(trackIDs) == 0 {
+		return out, nil
+	}
+	phs := make([]string, len(trackIDs))
+	args := make([]any, len(trackIDs))
+	for i, id := range trackIDs {
+		phs[i] = "?"
+		args[i] = id
+	}
+	rows, err := db.Query(`
+		SELECT at.track_id, a.id, a.title, a.kind, a.notes, a.created_at, a.updated_at,
+		       (SELECT COUNT(*) FROM album_tracks a2 WHERE a2.album_id = a.id)
+		FROM album_tracks at
+		JOIN albums a ON a.id = at.album_id
+		WHERE at.track_id IN (`+strings.Join(phs, ",")+`)
+		ORDER BY a.title COLLATE NOCASE`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get albums for tracks: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var trackID string
+		a := models.Album{}
+		if err := rows.Scan(&trackID, &a.ID, &a.Title, &a.Kind, &a.Notes,
+			&a.CreatedAt, &a.UpdatedAt, &a.TrackCount); err != nil {
+			return nil, fmt.Errorf("scan album for track: %w", err)
+		}
+		out[trackID] = append(out[trackID], a)
+	}
+	return out, rows.Err()
+}
+
+// AddTracksToAlbum appends many tracks to an album in a single transaction.
+func AddTracksToAlbum(db *sql.DB, albumID string, trackIDs []string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin add tracks to album: %w", err)
+	}
+	defer tx.Rollback()
+
+	var max int
+	if err := tx.QueryRow("SELECT COALESCE(MAX(position), 0) FROM album_tracks WHERE album_id = ?", albumID).Scan(&max); err != nil {
+		return fmt.Errorf("read album position: %w", err)
+	}
+	for _, id := range trackIDs {
+		if id == "" {
+			continue
+		}
+		res, err := tx.Exec(`
+			INSERT INTO album_tracks (album_id, track_id, position, notes)
+			VALUES (?, ?, ?, '')
+			ON CONFLICT(album_id, track_id) DO NOTHING`,
+			albumID, id, max+1)
+		if err != nil {
+			if isForeignKeyError(err) {
+				return fmt.Errorf("add track %q to album: %w (album or track does not exist)", id, err)
+			}
+			return fmt.Errorf("add track %q to album: %w", id, err)
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			max++
+		}
+	}
+	if _, err := tx.Exec("UPDATE albums SET updated_at = datetime('now') WHERE id = ?", albumID); err != nil {
+		return fmt.Errorf("touch album: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit add tracks to album: %w", err)
+	}
+	return nil
+}

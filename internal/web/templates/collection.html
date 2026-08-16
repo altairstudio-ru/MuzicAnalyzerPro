@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Album.Album.Title}} — Suno Archiver</title>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<div class="layout">
+    <aside class="sidebar">
+        <h1><a href="/">🎵 Suno Archiver</a></h1>
+        <div class="stat">
+            <div>Треков: <strong>{{.TrackCount}}</strong></div>
+            <div>Скачано: <strong>{{.DLCount}}</strong></div>
+        </div>
+        <div class="nav-group">
+            <div class="nav-title">Библиотека</div>
+            <a href="/" class="nav-item">← Все треки</a>
+        </div>
+        {{if .Workspaces}}
+        <div class="nav-group">
+            <div class="nav-title">Workspaces</div>
+            {{range .Workspaces}}
+            <a href="/?workspace={{.Name}}" class="nav-item"><span>{{.Name}}</span> <span>{{.TrackCount}}</span></a>
+            {{end}}
+        </div>
+        {{end}}
+        <div class="sync-area">
+            <button id="sync-btn" class="btn btn-primary" hx-post="/sync" hx-swap="none"
+                    hx-on::before-request="startSyncPoll()"
+                    hx-on::after-request="syncAfterRequest(event)">
+                🔄 Синхронизировать
+            </button>
+        </div>
+    </aside>
+    <main class="content">
+        <div class="detail-card" style="max-width:860px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+                <div>
+                    <h1>{{.Album.Album.Title}}</h1>
+                    <div class="sub">
+                        <span class="badge-ws">{{.Album.Album.Kind}}</span>
+                        · {{len .Album.Tracks}} треков{{if .Album.TotalDuration}} · ≈ {{.Album.TotalDuration | formatSeconds}}{{end}}
+                    </div>
+                </div>
+                <div class="collection-actions">
+                    <button class="btn btn-copy" onclick="editAlbum()">✏ Изменить</button>
+                    <button class="btn btn-copy btn-danger" onclick="deleteAlbum()">🗑 Удалить</button>
+                </div>
+            </div>
+            {{if .Album.Album.Notes}}
+            <div class="album-notes">{{.Album.Album.Notes}}</div>
+            {{end}}
+
+            <form class="add-track-form" onsubmit="addTrack(event)">
+                <select id="add-track-sel">
+                    <option value="">— добавить трек —</option>
+                    {{range .AllTracks}}<option value="{{.ID}}">{{.Title}}{{if .Artist}} — {{.Artist}}{{end}}</option>{{end}}
+                </select>
+                <button class="btn" type="submit">+ Добавить</button>
+                <span class="hint">или выделите треки на дашборде и добавьте bulk-действием</span>
+            </form>
+
+            <div class="tracklist">
+                <div class="tracklist-header">
+                    <span>#</span><span>Трек</span><span class="tl-actions">Порядок</span>
+                </div>
+                <div id="tracklist">
+                    {{range .Album.Tracks}}
+                    <div class="tracklist-row" data-id="{{.Track.ID}}">
+                        <span class="pos">{{.Position}}</span>
+                        <span class="tl-title">
+                            <a href="/tracks/{{.Track.ID}}">{{.Track.Title}}</a>
+                            {{if .Track.Artist}}<span class="tl-artist">{{.Track.Artist}}</span>{{end}}
+                            {{if .Notes}}<span class="tl-notes">— {{.Notes}}</span>{{end}}
+                        </span>
+                        <span class="tl-actions">
+                            <button class="btn-copy" onclick="moveRow(this,-1)" title="Выше">↑</button>
+                            <button class="btn-copy" onclick="moveRow(this,1)" title="Ниже">↓</button>
+                            <button class="btn-copy" onclick="removeRow(this)" title="Убрать">🗑</button>
+                        </span>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<div id="sync-modal" class="modal-overlay">
+    <div class="modal">
+        <h3>🔄 Синхронизация с Suno</h3>
+        <div id="sync-status-line" class="sync-line"><span class="spinner"></span>Ожидание запуска…</div>
+        <div id="sync-counters" class="sync-counters">Обработано: 0 · Новых: 0 · Скачано: 0 · Ошибок: 0</div>
+        <div id="sync-track" class="sync-track">&nbsp;</div>
+        <div class="modal-actions">
+            <button id="sync-stop-btn" class="btn btn-danger" onclick="stopSync()">⏹ Остановить</button>
+            <button class="btn" onclick="hideSyncModal()">В фоне</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let syncPollTimer = null;
+    function syncCountersText(st) {
+        return 'Обработано: ' + st.processed + ' · Новых: ' + st.new +
+               ' · Скачано: ' + st.downloaded + ' · Ошибок: ' + st.errors;
+    }
+    function showSyncModal() { document.getElementById('sync-modal').classList.add('open'); }
+    function hideSyncModal() { document.getElementById('sync-modal').classList.remove('open'); }
+    function renderSyncStatus(st) {
+        const line = document.getElementById('sync-status-line');
+        const counters = document.getElementById('sync-counters');
+        const track = document.getElementById('sync-track');
+        const stopBtn = document.getElementById('sync-stop-btn');
+        if (!line) return;
+        if (st.waiting_auth) {
+            line.innerHTML = '<span class="spinner"></span>⏳ Токен истёк — обновите его в расширении Chrome';
+            if (stopBtn) stopBtn.style.display = '';
+        } else if (st.stopped) {
+            line.innerHTML = '⏹ Остановлено';
+            if (stopBtn) stopBtn.style.display = 'none';
+        } else if (st.running) {
+            line.innerHTML = '<span class="spinner"></span>Синхронизация…';
+            if (stopBtn) stopBtn.style.display = '';
+        } else if (st.error) {
+            line.innerHTML = '⚠️ Ошибка: ' + st.error;
+            if (stopBtn) stopBtn.style.display = 'none';
+        } else if (st.phase === 'done' && st.processed > 0) {
+            line.innerHTML = '✓ Синхронизация завершена';
+            if (stopBtn) stopBtn.style.display = 'none';
+        } else {
+            line.innerHTML = '<span class="spinner"></span>Ожидание запуска…';
+        }
+        counters.textContent = syncCountersText(st);
+        track.textContent = st.last_track ? 'Сейчас: ' + st.last_track : ' ';
+    }
+    async function pollSyncStatus() {
+        let response;
+        try { response = await fetch('/api/sync-status'); } catch (err) { return; }
+        const st = await response.json();
+        renderSyncStatus(st);
+        if (st.running) {
+            showSyncModal();
+            syncPollTimer = setTimeout(pollSyncStatus, 1500);
+        } else {
+            syncPollTimer = null;
+            document.getElementById('sync-btn').disabled = false;
+            if (st.stopped) setTimeout(() => hideSyncModal(), 3000);
+            else if (st.error) showSyncModal();
+            else if (st.processed > 0) setTimeout(() => window.location.reload(), 1500);
+            else setTimeout(() => hideSyncModal(), 3000);
+        }
+    }
+    function startSyncPoll() {
+        document.getElementById('sync-btn').disabled = true;
+        clearTimeout(syncPollTimer);
+        showSyncModal();
+        syncPollTimer = setTimeout(pollSyncStatus, 300);
+    }
+    function syncAfterRequest(evt) {
+        if (evt.detail.xhr.status === 409) {
+            document.getElementById('sync-btn').disabled = false;
+            const line = document.getElementById('sync-status-line');
+            if (line) line.innerHTML = '⚠️ Синхронизация уже идёт';
+            clearTimeout(syncPollTimer);
+            syncPollTimer = setTimeout(pollSyncStatus, 1500);
+        }
+    }
+    async function stopSync() { try { await fetch('/sync/stop', { method: 'POST' }); } catch (e) {} }
+    document.addEventListener('DOMContentLoaded', () => {
+        clearTimeout(syncPollTimer);
+        syncPollTimer = setTimeout(pollSyncStatus, 300);
+    });
+
+    // ---------- Tracklist editing ----------
+
+    const ALBUM_ID = '{{.Album.Album.ID}}';
+    const ALBUM_TITLE = {{printf "%q" .Album.Album.Title}};
+    const ALBUM_KIND = {{printf "%q" .Album.Album.Kind}};
+    const ALBUM_NOTES = {{printf "%q" .Album.Album.Notes}};
+
+    function posting(url, body) {
+        return fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+    }
+    function listEl() { return document.getElementById('tracklist'); }
+    function rowOrder() {
+        return [...listEl().querySelectorAll('.tracklist-row')].map(r => r.dataset.id);
+    }
+    async function saveOrder() {
+        try { await posting('/api/albums/' + ALBUM_ID + '/reorder', { track_ids: rowOrder() }); }
+        catch (e) { alert('Ошибка перестановки: ' + e.message); }
+    }
+    function renumber() {
+        listEl().querySelectorAll('.tracklist-row .pos').forEach((el, i) => el.textContent = i + 1);
+    }
+    function moveRow(btn, dir) {
+        const list = listEl();
+        const rows = [...list.querySelectorAll('.tracklist-row')];
+        const i = rows.indexOf(btn.closest('.tracklist-row'));
+        const j = i + dir;
+        if (j < 0 || j >= rows.length) return;
+        list.insertBefore(rows[i], dir < 0 ? rows[i - 1] : rows[j + 1]);
+        renumber();
+        saveOrder();
+    }
+    async function removeRow(btn) {
+        const row = btn.closest('.tracklist-row');
+        if (!confirm('Убрать трек из сборника?')) return;
+        const r = await fetch('/api/albums/' + ALBUM_ID + '/tracks/' + row.dataset.id, { method: 'DELETE' });
+        if (r.ok) { row.remove(); renumber(); saveOrder(); }
+        else { const j = await r.json().catch(() => ({})); alert('Ошибка: ' + (j.error || r.status)); }
+    }
+    async function addTrack(ev) {
+        ev.preventDefault();
+        const id = document.getElementById('add-track-sel').value;
+        if (!id) return;
+        try {
+            await posting('/api/albums/' + ALBUM_ID + '/tracks', { track_id: id });
+            location.reload();
+        } catch (e) { alert('Ошибка: ' + e.message); }
+    }
+    async function editAlbum() {
+        const title = prompt('Название', ALBUM_TITLE);
+        if (title === null) return;
+        const kind = prompt('Тип (album / compilation / ep / …)', ALBUM_KIND) || 'compilation';
+        const notes = prompt('Заметки', ALBUM_NOTES) || '';
+        try {
+            const r = await fetch('/api/albums/' + ALBUM_ID, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, kind, notes })
+            });
+            if (r.ok) location.reload();
+            else { const j = await r.json(); alert('Ошибка: ' + (j.error || r.status)); }
+        } catch (e) { alert('Ошибка: ' + e.message); }
+    }
+    async function deleteAlbum() {
+        if (!confirm('Удалить сборник целиком?')) return;
+        const r = await fetch('/api/albums/' + ALBUM_ID, { method: 'DELETE' });
+        if (r.ok) location.href = '/';
+        else { const j = await r.json(); alert('Ошибка: ' + (j.error || r.status)); }
+    }
+</script>
+</body>
+</html>
