@@ -35,6 +35,21 @@
 - [x] Similarity scores per domain (atmosphere, mix, energy, stereo)
 - [x] "Your mix vs reference" visual overlay (comparison chart with matplotlib)
 
+## Каталогизация (сборники, метки, варианты)
+
+### Ядро: БД + API ✅
+- [x] Таблицы `albums`, `album_tracks` (упорядоченный треклист, заметки), `labels`, `track_labels`, `variant_groups`, `variant_group_tracks`
+- [x] Дефолтные метки (single, album, compilation, draft, final, b-side, cover, remix) — сидятся при первом запуске
+- [x] DB-слой: создание/обновление/удаление альбомов, добавление/удаление/перестановка треков (reorder), метки (замена набора за один вызов), группы вариантов + `best_track_id`
+- [x] Фильтры `ListTracks` по метке (`label`) и альбому (`album_id`)
+- [x] REST API (JSON): `/api/albums`, `/api/labels`, `/api/variant-groups`, `/api/variant-groups/suggestions` (подсказка вариантов по одинаковому названию)
+- [x] Тесты DB + httptest-смоук по всем эндпоинтам
+
+### Итерация 2 (UI + сравнение вариантов)
+- [ ] Веб-UI: страница сборника с упорядоченным треклистом, страница трека (метки, сборники, варианты), чипы-фильтры и bulk-действия на дашборде
+- [ ] «Сравнить варианты»: быстрый анализ (только аудио-метрики, без whisper) по членам группы → ранжированная таблица (overall_score, mix_quality, critical_issues, LUFS, dynamic range) → «Сделать лучшим»
+- [ ] Авто-подсказка: собрать группу вариантов из треков с одинаковым названием
+
 ### Hook & Structure Analysis
 - [ ] Section detection (intro, verse, chorus, bridge, outro)
 - [ ] Hook strength scoring

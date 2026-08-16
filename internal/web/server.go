@@ -102,6 +102,37 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 	s.Router.Post("/compare/select/{id}", s.compareSelect)
 	s.Router.Get("/plots/*", s.servePlot)
 
+	// Catalog API: albums/collections, labels, variant groups. JSON only —
+	// the HTML UI for these will land in a later iteration.
+	s.Router.Route("/api", func(r chi.Router) {
+		r.Get("/albums", s.apiListAlbums)
+		r.Post("/albums", s.apiCreateAlbum)
+		r.Get("/albums/{id}", s.apiGetAlbum)
+		r.Patch("/albums/{id}", s.apiUpdateAlbum)
+		r.Delete("/albums/{id}", s.apiDeleteAlbum)
+		r.Post("/albums/{id}/tracks", s.apiAddAlbumTrack)
+		r.Patch("/albums/{id}/tracks/{track_id}", s.apiUpdateAlbumTrack)
+		r.Delete("/albums/{id}/tracks/{track_id}", s.apiRemoveAlbumTrack)
+		r.Post("/albums/{id}/reorder", s.apiReorderAlbumTracks)
+
+		r.Get("/labels", s.apiListLabels)
+		r.Post("/labels", s.apiCreateLabel)
+		r.Patch("/labels/{label_id}", s.apiUpdateLabel)
+		r.Delete("/labels/{label_id}", s.apiDeleteLabel)
+		r.Get("/tracks/{id}/labels", s.apiGetTrackLabels)
+		r.Put("/tracks/{id}/labels", s.apiSetTrackLabels)
+
+		r.Get("/variant-groups/suggestions", s.apiVariantSuggestions)
+		r.Get("/variant-groups", s.apiListVariantGroups)
+		r.Post("/variant-groups", s.apiCreateVariantGroup)
+		r.Get("/variant-groups/{id}", s.apiGetVariantGroup)
+		r.Patch("/variant-groups/{id}", s.apiUpdateVariantGroup)
+		r.Delete("/variant-groups/{id}", s.apiDeleteVariantGroup)
+		r.Post("/variant-groups/{id}/tracks/{track_id}", s.apiAddVariantTrack)
+		r.Delete("/variant-groups/{id}/tracks/{track_id}", s.apiRemoveVariantTrack)
+		r.Post("/variant-groups/{id}/best", s.apiSetBestTrack)
+	})
+
 	// Static assets (style.css, woff2 fonts).
 	assets, _ := fs.Sub(staticFS, "static")
 	s.Router.Handle("/assets/*", http.StripPrefix("/assets/", http.FileServer(http.FS(assets))))

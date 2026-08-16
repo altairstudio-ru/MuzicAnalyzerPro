@@ -84,18 +84,30 @@ func GetTrack(db *sql.DB, id string) (*models.Track, error) {
 func ListTracks(db *sql.DB, filter models.TrackFilter) ([]models.Track, error) {
 	var conditions []string
 	var args []interface{}
+	joins := ""
 
 	if filter.Workspace != "" {
-		conditions = append(conditions, "workspace = ?")
+		conditions = append(conditions, "t.workspace = ?")
 		args = append(args, filter.Workspace)
 	}
 	if filter.Tag != "" {
-		conditions = append(conditions, "tags LIKE ?")
+		conditions = append(conditions, "t.tags LIKE ?")
 		args = append(args, "%"+filter.Tag+"%")
+	}
+	if filter.AlbumID != "" {
+		joins += " JOIN album_tracks at ON at.track_id = t.id"
+		conditions = append(conditions, "at.album_id = ?")
+		args = append(args, filter.AlbumID)
+	}
+	if filter.Label != "" {
+		joins += " JOIN track_labels tl ON tl.track_id = t.id" +
+			" JOIN labels lb ON lb.id = tl.label_id"
+		conditions = append(conditions, "lb.name = ?")
+		args = append(args, filter.Label)
 	}
 	if filter.Search != "" {
 		conditions = append(conditions,
-			"(title LIKE ? OR prompt LIKE ? OR lyrics LIKE ?)")
+			"(t.title LIKE ? OR t.prompt LIKE ? OR t.lyrics LIKE ?)")
 		s := "%" + filter.Search + "%"
 		args = append(args, s, s, s)
 	}
@@ -104,17 +116,17 @@ func ListTracks(db *sql.DB, filter models.TrackFilter) ([]models.Track, error) {
 		if *filter.Downloaded {
 			v = 1
 		}
-		conditions = append(conditions, "is_downloaded = ?")
+		conditions = append(conditions, "t.is_downloaded = ?")
 		args = append(args, v)
 	}
 
-	query := "SELECT id, title, artist, prompt, lyrics, tags, workspace, " +
-		"duration, created_at, audio_path, audio_hash, " +
-		"lyrics_path, is_downloaded, file_size FROM tracks"
+	query := "SELECT t.id, t.title, t.artist, t.prompt, t.lyrics, t.tags, t.workspace, " +
+		"t.duration, t.created_at, t.audio_path, t.audio_hash, " +
+		"t.lyrics_path, t.is_downloaded, t.file_size FROM tracks t" + joins
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
-	query += " ORDER BY created_at DESC"
+	query += " ORDER BY t.created_at DESC"
 
 	if filter.Limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", filter.Limit)

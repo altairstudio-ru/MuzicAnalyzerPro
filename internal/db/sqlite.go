@@ -33,5 +33,10 @@ func Init(path string) (*sql.DB, error) {
 	// Migrate existing databases: add lyrics_path if missing
 	db.Exec("ALTER TABLE tracks ADD COLUMN lyrics_path TEXT NOT NULL DEFAULT ''")
 
+	// Seed default labels for curation (single, album, compilation, ...)
+	if err := EnsureDefaultLabels(db); err != nil {
+		return nil, fmt.Errorf("seed default labels: %w", err)
+	}
+
 	return db, nil
 }

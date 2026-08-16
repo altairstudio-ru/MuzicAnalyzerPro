@@ -29,6 +29,8 @@ type Workspace struct {
 type TrackFilter struct {
 	Workspace  string
 	Tag        string
+	Label      string // user-defined curation label name
+	AlbumID    string // album/collection the track belongs to
 	Search     string // search in title, prompt, lyrics
 	Downloaded *bool  // nil = all, true/false filter
 	Limit      int
@@ -37,10 +39,10 @@ type TrackFilter struct {
 
 // SyncStats holds statistics from a sync operation.
 type SyncStats struct {
-	TotalTracks     int `json:"total_tracks"`
-	NewTracks       int `json:"new_tracks"`
-	UpdatedTracks   int `json:"updated_tracks"`
-	Downloaded      int `json:"downloaded"`
-	LyricsExported  int `json:"lyrics_exported"`
-	Errors          int `json:"errors"`
+	TotalTracks    int `json:"total_tracks"`
+	NewTracks      int `json:"new_tracks"`
+	UpdatedTracks  int `json:"updated_tracks"`
+	Downloaded     int `json:"downloaded"`
+	LyricsExported int `json:"lyrics_exported"`
+	Errors         int `json:"errors"`
 }
