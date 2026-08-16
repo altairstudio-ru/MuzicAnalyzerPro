@@ -170,7 +170,15 @@ function toggleRefPanel() {
         }
         function renderAnalysis(jsonStr) {
             try {
-                const data = JSON.parse(jsonStr);
+                let data = JSON.parse(jsonStr);
+                // Accept both DB wrapper {status, result_json} and raw Python output {status, results}.
+                if (data && data.results && data.result_json === undefined) {
+                    data = {
+                        status: data.status || 'done',
+                        error_msg: data.error || data.error_msg || '',
+                        result_json: JSON.stringify(data),
+                    };
+                }
                 let html = '';
                 if (data.status === 'error') {
                     html = '<div class="section"><h3>Анализ</h3><p style="color:#f0615f">Ошибка: ' + escapeHtml(data.error_msg || 'неизвестная ошибка') + '</p></div>';
@@ -183,7 +191,12 @@ function toggleRefPanel() {
                     setTimeout(pollAnalysis, 3000);
                     return;
                 }
-                const results = data.result_json ? JSON.parse(data.result_json) : {};
+                let results = {};
+                if (typeof data.result_json === 'string' && data.result_json) {
+                    results = JSON.parse(data.result_json);
+                } else if (data.result_json && typeof data.result_json === 'object') {
+                    results = data.result_json;
+                }
                 html += '<div class="analysis-block">';
                 html += '<div class="analysis-header"><span>🎯 Анализ трека</span> <span class="badge-dl yes">✓ выполнен</span></div>';
                 if (results.elapsed_seconds) {
@@ -310,9 +323,21 @@ function toggleRefPanel() {
                 .then(data => renderAnalysis(JSON.stringify(data)))
                 .catch(() => setTimeout(pollAnalysis, 5000));
         }
-        document.addEventListener('DOMContentLoaded', function() {
+        function initAnalysisUI() {
             const el = document.getElementById('analysis-json');
-            if (el) renderAnalysis(el.textContent);
+            if (!el) return;
+            const wrapper = {
+                status: el.dataset.status || 'done',
+                error_msg: el.dataset.error || '',
+                result_json: (el.textContent || '').trim() || '{}',
+            };
+            renderAnalysis(JSON.stringify(wrapper));
+        }
+        document.addEventListener('DOMContentLoaded', initAnalysisUI);
+        document.addEventListener('htmx:afterSwap', function (ev) {
+            if (ev.detail && ev.detail.target && ev.detail.target.id === 'main-content') {
+                initAnalysisUI();
+            }
         });
         async function addDetailLabel(ev, trackID) {
             ev.preventDefault();
@@ -477,6 +502,8 @@ function toggleRefPanel() {
                 <h2 style="font-size:16px;">🔬 Анализ трека</h2>
                 {{if not $.AnalysisResult}}
                 <button class="btn btn-primary" hx-post="/analyze/{{.ID}}" hx-swap="none">🎧 Анализировать</button>
+                {{else if ne $.AnalysisResult.Status "pending"}}
+                <button class="btn btn-primary" hx-post="/analyze/{{.ID}}" hx-swap="none">🔄 Переанализировать</button>
                 {{end}}
             </div>
 
@@ -507,7 +534,9 @@ function toggleRefPanel() {
             </div>
 
             {{if $.AnalysisResult}}
-            <div id="analysis-json" style="display:none;">{{$.AnalysisResult.ResultJSON}}</div>
+            <div id="analysis-json" style="display:none;"
+                 data-status="{{$.AnalysisResult.Status}}"
+                 data-error="{{$.AnalysisResult.ErrorMsg}}">{{$.AnalysisResult.ResultJSON}}</div>
             <div id="analysis-status-data" data-url="/analyze/{{.ID}}/status" style="display:none;"></div>
             <div id="analysis-render"></div>
             {{end}}

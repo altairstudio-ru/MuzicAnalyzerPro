@@ -55,8 +55,17 @@ func findAnalyzerDir() string {
 		"../../analyzer",
 	}
 	for _, c := range candidates {
-		if fi, err := os.Stat(c); err == nil && fi.IsDir() {
-			return c
+		fi, err := os.Stat(c)
+		if err != nil || !fi.IsDir() {
+			continue
+		}
+		abs, err := filepath.Abs(c)
+		if err != nil {
+			continue
+		}
+		script := filepath.Join(abs, "analyze.py")
+		if fi, err := os.Stat(script); err == nil && !fi.IsDir() {
+			return abs
 		}
 	}
 	return ""

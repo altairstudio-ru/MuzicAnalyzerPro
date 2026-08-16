@@ -122,6 +122,12 @@
 
 ## Changelog
 
+### 2026-08-16 — v0.4.0
+- Persist Suno likes, play counts, liked flag, track_type and model_name; badges + track_type filter in Web UI
+- Global HTMX player: one audio element survives page navigation; only one track plays at a time
+- Fix analyzer subprocess path (`analyzer/analyzer/analyze.py` double directory)
+- Fix analysis detail UI: render stored metrics correctly; show errors; add «Переанализировать»
+
 ### 2026-07-28 — v1.0.0
 - All MVP 1.0 phases complete
 - 8 metric groups, Go+Python hybrid architecture

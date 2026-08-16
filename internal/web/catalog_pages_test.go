@@ -314,3 +314,57 @@ func TestSunoMetricsAndGlobalPlayerUI(t *testing.T) {
 		}
 	}
 }
+
+func TestAnalysisResultRendersWrapperAttrs(t *testing.T) {
+	ts, database := newTestServer(t)
+
+	tr := &models.Track{ID: "an-1", Title: "Analyzed", IsDownloaded: true, AudioPath: "/tmp/a.mp3"}
+	if err := db.UpsertTrack(database, tr); err != nil {
+		t.Fatalf("seed track: %v", err)
+	}
+	payload := `{"status":"done","elapsed_seconds":1.5,"metrics":["loudness"],"results":{"loudness":{"lufs_integrated":-14.0}}}`
+	if err := db.UpsertAnalysisResult(database, &db.AnalysisResult{
+		TrackID: "an-1", Version: 1, Status: "done", ResultJSON: payload,
+	}); err != nil {
+		t.Fatalf("seed analysis: %v", err)
+	}
+
+	resp, err := http.Get(ts.URL + "/tracks/an-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	s := string(body)
+	for _, want := range []string{
+		`data-status="done"`,
+		`id="analysis-json"`,
+		`id="analysis-render"`,
+		"Переанализировать",
+		"lufs_integrated",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("detail analysis UI missing %q", want)
+		}
+	}
+
+	// Error result should expose error + re-analyze, not hide forever.
+	if err := db.UpsertAnalysisResult(database, &db.AnalysisResult{
+		TrackID: "an-1", Version: 1, Status: "error", ErrorMsg: "boom", ResultJSON: "{}",
+	}); err != nil {
+		t.Fatalf("seed error: %v", err)
+	}
+	resp, err = http.Get(ts.URL + "/tracks/an-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	s = string(body)
+	if !strings.Contains(s, `data-status="error"`) || !strings.Contains(s, `data-error="boom"`) {
+		t.Errorf("error attrs missing in %s", s[strings.Index(s, "analysis-json"):strings.Index(s, "analysis-json")+200])
+	}
+	if !strings.Contains(s, "Переанализировать") {
+		t.Error("expected re-analyze button for error status")
+	}
+}
