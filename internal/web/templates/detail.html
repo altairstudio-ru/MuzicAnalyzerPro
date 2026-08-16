@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{(index .Tracks 0).Title}} — Suno Archiver</title>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <link rel="stylesheet" href="/assets/style.css">
     <script>
 function toggleRefPanel() {
             const p = document.getElementById('ref-panel');
@@ -78,11 +79,11 @@ function toggleRefPanel() {
             return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         }
         function renderReferenceComparison(ref) {
-            let html = '<div class="metric-group" style="border:1px solid #30363d;border-radius:8px;padding:12px;background:#0d1117;">';
+            let html = '<div class="metric-group" style="border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:12px;background:#0b0b10;">';
             html += '<div class="metric-title">📊 Reference Match</div>';
 
             if (ref.error) {
-                html += '<div style="color:#f85149;font-size:13px;">' + escapeHtml(ref.error) + '</div>';
+                html += '<div style="color:#f0615f;font-size:13px;">' + escapeHtml(ref.error) + '</div>';
                 html += '</div>';
                 return html;
             }
@@ -91,11 +92,11 @@ function toggleRefPanel() {
             if (ref.domain_scores) {
                 html += '<div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap;">';
                 for (const [domain, score] of Object.entries(ref.domain_scores)) {
-                    const color = score >= 7 ? '#3fb950' : score >= 4 ? '#d29922' : '#f85149';
-                    html += '<div style="flex:1;min-width:80px;text-align:center;padding:8px;background:#161b22;border-radius:6px;border:1px solid #30363d;">';
-                    html += '<div style="font-size:10px;color:#8b949e;text-transform:uppercase;margin-bottom:2px;">' + domain + '</div>';
+                    const color = score >= 7 ? '#6ee7a0' : score >= 4 ? '#e5b567' : '#f0615f';
+                    html += '<div style="flex:1;min-width:80px;text-align:center;padding:8px;background:#12121a;border-radius:6px;border:1px solid rgba(255,255,255,.14);">';
+                    html += '<div style="font-size:10px;color:#8f8a83;text-transform:uppercase;margin-bottom:2px;">' + domain + '</div>';
                     html += '<div style="font-size:20px;font-weight:700;color:' + color + '">' + score + '</div>';
-                    html += '<div style="height:3px;background:#21262d;border-radius:2px;margin-top:4px;overflow:hidden;">';
+                    html += '<div style="height:3px;background:rgba(255,255,255,.08);border-radius:2px;margin-top:4px;overflow:hidden;">';
                     html += '<div style="width:' + Math.min(100, score*10) + '%;height:100%;background:' + color + ';border-radius:2px;"></div></div>';
                     html += '</div>';
                 }
@@ -112,7 +113,7 @@ function toggleRefPanel() {
                 const v = ref[m.key];
                 if (v === undefined) continue;
                 const pct = Math.min(100, Math.max(0, (v / 10) * 100));
-                const color = pct >= 70 ? '#3fb950' : pct >= 40 ? '#d29922' : '#f85149';
+                const color = pct >= 70 ? '#6ee7a0' : pct >= 40 ? '#e5b567' : '#f0615f';
                 html += '<div class="metric-row"><span class="metric-label">' + m.label + '</span>';
                 html += '<div class="metric-bar-bg"><div class="metric-bar" style="width:' + pct + '%;background:' + color + '"></div></div>';
                 html += '<span class="metric-val" style="color:' + color + '">' + v + '</span></div>';
@@ -120,17 +121,17 @@ function toggleRefPanel() {
 
             if (ref.loudness_difference !== undefined) {
                 const diff = ref.loudness_difference;
-                const color = Math.abs(diff) < 3 ? '#3fb950' : Math.abs(diff) < 6 ? '#d29922' : '#f85149';
+                const color = Math.abs(diff) < 3 ? '#6ee7a0' : Math.abs(diff) < 6 ? '#e5b567' : '#f0615f';
                 html += '<div class="metric-row"><span class="metric-label">Loudness diff</span>';
                 html += '<span class="metric-val" style="color:' + color + '">' + (diff > 0 ? '+' : '') + diff.toFixed(1) + ' LU</span></div>';
             }
 
             // Per-band similarity
             if (ref.per_band_similarity) {
-                html += '<div style="margin:8px 0 4px;font-size:11px;color:#8b949e;">Per-band similarity</div>';
+                html += '<div style="margin:8px 0 4px;font-size:11px;color:#8f8a83;">Per-band similarity</div>';
                 for (const [band, score] of Object.entries(ref.per_band_similarity)) {
                     const pct = Math.min(100, Math.max(0, (score / 10) * 100));
-                    const color = pct >= 70 ? '#3fb950' : pct >= 40 ? '#d29922' : '#f85149';
+                    const color = pct >= 70 ? '#6ee7a0' : pct >= 40 ? '#e5b567' : '#f0615f';
                     html += '<div class="metric-row" style="padding:1px 0;"><span class="metric-label" style="flex:0 0 80px;font-size:11px;">' + band.replace(/_/g,' ') + '</span>';
                     html += '<div class="metric-bar-bg" style="height:4px;"><div class="metric-bar" style="width:' + pct + '%;background:' + color + '"></div></div>';
                     html += '<span class="metric-val" style="font-size:11px;color:' + color + '">' + score + '</span></div>';
@@ -140,7 +141,7 @@ function toggleRefPanel() {
             // Comparison plot
             if (ref.comparison_plot) {
                 html += '<div style="margin-top:10px;">';
-                html += '<img src="/plots/' + encodeURIComponent(ref.comparison_plot.split('/').pop()) + '" style="width:100%;border-radius:6px;border:1px solid #30363d;" alt="Comparison">';
+                html += '<img src="/plots/' + encodeURIComponent(ref.comparison_plot.split('/').pop()) + '" style="width:100%;border-radius:6px;border:1px solid rgba(255,255,255,.14);" alt="Comparison">';
                 html += '</div>';
             }
 
@@ -148,19 +149,19 @@ function toggleRefPanel() {
             return html;
         }
         function renderRecommendations(recs) {
-            let html = '<div style="margin:6px 0 10px 8px;border-left:2px solid #30363d;padding-left:12px;">';
+            let html = '<div style="margin:6px 0 10px 8px;border-left:2px solid rgba(255,255,255,.14);padding-left:12px;">';
             for (const r of recs) {
-                const color = r.severity === 'critical' ? '#f85149' : r.severity === 'warning' ? '#d29922' : '#3fb950';
+                const color = r.severity === 'critical' ? '#f0615f' : r.severity === 'warning' ? '#e5b567' : '#6ee7a0';
                 const icon = r.severity === 'critical' ? '🔴' : r.severity === 'warning' ? '🟡' : '🟢';
-                html += '<div style="padding:8px;margin-bottom:6px;background:#0d1117;border-radius:6px;border-left:3px solid ' + color + '">';
+                html += '<div style="padding:8px;margin-bottom:6px;background:#0b0b10;border-radius:6px;border-left:3px solid ' + color + '">';
                 html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">';
                 html += '<span>' + icon + '</span>';
                 html += '<span style="font-size:12px;font-weight:600;color:' + color + '">' + r.severity.toUpperCase() + '</span>';
-                html += '<span style="font-size:11px;color:#8b949e">' + escapeHtml(r.area || '') + '</span>';
+                html += '<span style="font-size:11px;color:#8f8a83">' + escapeHtml(r.area || '') + '</span>';
                 html += '</div>';
-                html += '<div style="font-size:13px;color:#e6edf3;margin:4px 0">' + escapeHtml(r.message || '') + '</div>';
+                html += '<div style="font-size:13px;color:#ece7e1;margin:4px 0">' + escapeHtml(r.message || '') + '</div>';
                 if (r.detail) {
-                    html += '<div style="font-size:11px;color:#8b949e">' + escapeHtml(r.detail) + '</div>';
+                    html += '<div style="font-size:11px;color:#8f8a83">' + escapeHtml(r.detail) + '</div>';
                 }
                 html += '</div>';
             }
@@ -172,12 +173,12 @@ function toggleRefPanel() {
                 const data = JSON.parse(jsonStr);
                 let html = '';
                 if (data.status === 'error') {
-                    html = '<div class="section"><h3>Анализ</h3><p style="color:#f85149">Ошибка: ' + escapeHtml(data.error_msg || 'неизвестная ошибка') + '</p></div>';
+                    html = '<div class="section"><h3>Анализ</h3><p style="color:#f0615f">Ошибка: ' + escapeHtml(data.error_msg || 'неизвестная ошибка') + '</p></div>';
                     document.getElementById('analysis-render').innerHTML = html;
                     return;
                 }
                 if (data.status === 'pending') {
-                    html = '<div class="analysis-block"><div class="analysis-header"><span>🎯 Анализ трека</span> <span style="color:#d29922">⏳ выполняется...</span></div></div>';
+                    html = '<div class="analysis-block"><div class="analysis-header"><span>🎯 Анализ трека</span> <span style="color:#e5b567">⏳ выполняется...</span></div></div>';
                     document.getElementById('analysis-render').innerHTML = html;
                     setTimeout(pollAnalysis, 3000);
                     return;
@@ -195,10 +196,10 @@ function toggleRefPanel() {
                             if (key.startsWith('raw_')) continue;
                             if (key === 'band_energy' && typeof val === 'object') {
                                 const bands = Object.entries(val).sort((a,b) => a[0].localeCompare(b[0]));
-                                html += '<div style="margin:6px 0 10px 8px;border-left:2px solid #30363d;padding-left:12px;">';
+                                html += '<div style="margin:6px 0 10px 8px;border-left:2px solid rgba(255,255,255,.14);padding-left:12px;">';
                                 for (const [band, energy] of bands) {
                                     const pct = Math.min(100, Math.max(0, energy));
-                                    const color = pct > 50 ? '#f85149' : pct > 25 ? '#d29922' : '#3fb950';
+                                    const color = pct > 50 ? '#f0615f' : pct > 25 ? '#e5b567' : '#6ee7a0';
                                     html += '<div class="metric-row"><span class="metric-label">' + band.replace(/_/g,' ') + '</span>';
                                     html += '<div class="metric-bar-bg"><div class="metric-bar" style="width:' + pct + '%;background:' + color + '"></div></div>';
                                     html += '<span class="metric-val" style="color:' + color + '">' + energy.toFixed(1) + '%</span></div>';
@@ -207,9 +208,9 @@ function toggleRefPanel() {
                                 continue;
                             }
                             if (key === 'conflicts' && Array.isArray(val)) {
-                                html += '<div style="margin:6px 0 10px 8px;border-left:2px solid #30363d;padding-left:12px;">';
+                                html += '<div style="margin:6px 0 10px 8px;border-left:2px solid rgba(255,255,255,.14);padding-left:12px;">';
                                 for (const c of val) {
-                                    const color = c.severity === 'critical' ? '#f85149' : c.severity === 'warning' ? '#d29922' : '#3fb950';
+                                    const color = c.severity === 'critical' ? '#f0615f' : c.severity === 'warning' ? '#e5b567' : '#6ee7a0';
                                     html += '<div class="metric-row"><span class="metric-label" style="flex:1;font-size:11px">' + escapeHtml(c.zone || c.name || '') + '</span>';
                                     html += '<span style="color:' + color + ';font-size:11px">' + c.severity + '</span>';
                                     html += '<span class="metric-val" style="color:' + color + '">' + (c.excess_db || '0') + ' dB</span></div>';
@@ -221,7 +222,7 @@ function toggleRefPanel() {
                                 continue;
                             }
                             if (key === 'full_text' && typeof val === 'string' && val) {
-                                html += '<div style="margin:6px 0 10px 8px;border-left:2px solid #30363d;padding-left:12px;"><div style="font-size:12px;color:#8b949e;margin-bottom:4px;">full transcription</div><div style="font-size:13px;line-height:1.5;color:#e6edf3;white-space:pre-wrap;max-height:200px;overflow-y:auto;">' + escapeHtml(val) + '</div></div>';
+                                html += '<div style="margin:6px 0 10px 8px;border-left:2px solid rgba(255,255,255,.14);padding-left:12px;"><div style="font-size:12px;color:#8f8a83;margin-bottom:4px;">full transcription</div><div style="font-size:13px;line-height:1.5;color:#ece7e1;white-space:pre-wrap;max-height:200px;overflow-y:auto;">' + escapeHtml(val) + '</div></div>';
                                 continue;
                             }
                             if (key === 'recommendations' && Array.isArray(val)) {
@@ -229,13 +230,13 @@ function toggleRefPanel() {
                                 continue;
                             }
                             if (key === 'profiles' && typeof val === 'object') {
-                                html += '<div style="margin:6px 0 10px 8px;border-left:2px solid #30363d;padding-left:12px;">';
+                                html += '<div style="margin:6px 0 10px 8px;border-left:2px solid rgba(255,255,255,.14);padding-left:12px;">';
                                 const sorted = Object.entries(val).sort((a,b) => b[1].score - a[1].score);
                                 for (const [pk, pv] of sorted) {
-                                    const color = pv.score >= 7 ? '#3fb950' : pv.score >= 4 ? '#d29922' : '#f85149';
+                                    const color = pv.score >= 7 ? '#6ee7a0' : pv.score >= 4 ? '#e5b567' : '#f0615f';
                                     html += '<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;">';
-                                    html += '<span style="flex:1;color:#c9d1d9">' + escapeHtml(pv.device || pk) + '</span>';
-                                    html += '<div style="width:60px;height:4px;background:#21262d;border-radius:2px;overflow:hidden;"><div style="width:' + Math.min(100, pv.score*10) + '%;height:100%;background:' + color + ';border-radius:2px;"></div></div>';
+                                    html += '<span style="flex:1;color:#ece7e1">' + escapeHtml(pv.device || pk) + '</span>';
+                                    html += '<div style="width:60px;height:4px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden;"><div style="width:' + Math.min(100, pv.score*10) + '%;height:100%;background:' + color + ';border-radius:2px;"></div></div>';
                                     html += '<span style="width:30px;text-align:right;font-family:monospace;color:' + color + '">' + pv.score + '</span>';
                                     html += '</div>';
                                 }
@@ -247,20 +248,20 @@ function toggleRefPanel() {
                                 continue;
                             }
                             if (key === 'platforms' && typeof val === 'object') {
-                                html += '<div style="margin:6px 0 10px 8px;border-left:2px solid #30363d;padding-left:12px;">';
+                                html += '<div style="margin:6px 0 10px 8px;border-left:2px solid rgba(255,255,255,.14);padding-left:12px;">';
                                 for (const [pk, pv] of Object.entries(val)) {
-                                    const color = pv.score >= 7 ? '#3fb950' : pv.score >= 4 ? '#d29922' : '#f85149';
-                                    html += '<div style="padding:6px 0;border-bottom:1px solid #21262d;">';
+                                    const color = pv.score >= 7 ? '#6ee7a0' : pv.score >= 4 ? '#e5b567' : '#f0615f';
+                                    html += '<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,.08);">';
                                     html += '<div style="display:flex;align-items:center;gap:6px;font-size:12px;">';
-                                    html += '<span style="flex:1;color:#c9d1d9">' + pk.charAt(0).toUpperCase() + pk.slice(1) + '</span>';
-                                    html += '<span style="font-size:11px;color:#8b949e">' + pv.readiness_percent + '%</span>';
+                                    html += '<span style="flex:1;color:#ece7e1">' + pk.charAt(0).toUpperCase() + pk.slice(1) + '</span>';
+                                    html += '<span style="font-size:11px;color:#8f8a83">' + pv.readiness_percent + '%</span>';
                                     html += '</div>';
-                                    html += '<div style="display:flex;gap:8px;font-size:11px;color:#8b949e;margin-top:2px;">';
+                                    html += '<div style="display:flex;gap:8px;font-size:11px;color:#8f8a83;margin-top:2px;">';
                                     html += '<span>Penalty: ' + pv.loudness_penalty_db + ' dB</span>';
                                     if (pv.issues && pv.issues.length > 0) {
-                                        html += '<span style="color:#d29922">⚠ ' + pv.issues.length + ' issues</span>';
+                                        html += '<span style="color:#e5b567">⚠ ' + pv.issues.length + ' issues</span>';
                                     } else {
-                                        html += '<span style="color:#3fb950">✓ compliant</span>';
+                                        html += '<span style="color:#6ee7a0">✓ compliant</span>';
                                     }
                                     html += '</div></div>';
                                 }
@@ -277,7 +278,7 @@ function toggleRefPanel() {
                             html += '<div class="metric-row"><span class="metric-label">' + label + '</span>';
                             if (score) {
                                 const pct = Math.min(100, Math.max(0, (val / 10) * 100));
-                                const color = pct >= 70 ? '#3fb950' : pct >= 40 ? '#d29922' : '#f85149';
+                                const color = pct >= 70 ? '#6ee7a0' : pct >= 40 ? '#e5b567' : '#f0615f';
                                 html += '<div class="metric-bar-bg"><div class="metric-bar" style="width:' + pct + '%;background:' + color + '"></div></div>';
                                 html += '<span class="metric-val" style="color:' + color + '">' + val + '</span>';
                             } else {
@@ -291,7 +292,7 @@ function toggleRefPanel() {
                 if (results.errors && results.errors.length > 0) {
                     html += '<div class="section"><h3>Ошибки</h3>';
                     for (const e of results.errors) {
-                        html += '<p style="color:#f85149;font-size:13px">' + escapeHtml(e.metric) + ': ' + escapeHtml(e.error) + '</p>';
+                        html += '<p style="color:#f0615f;font-size:13px">' + escapeHtml(e.metric) + ': ' + escapeHtml(e.error) + '</p>';
                     }
                     html += '</div>';
                 }
@@ -314,104 +315,6 @@ function toggleRefPanel() {
             if (el) renderAnalysis(el.textContent);
         });
     </script>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0d1117; color: #c9d1d9; min-height: 100vh;
-        }
-        .layout { display: flex; min-height: 100vh; }
-        .sidebar {
-            width: 240px; background: #161b22; border-right: 1px solid #30363d;
-            padding: 20px; flex-shrink: 0; position: sticky; top: 0; height: 100vh;
-            display: flex; flex-direction: column;
-        }
-        .sidebar h1 { font-size: 18px; margin-bottom: 20px; color: #58a6ff; }
-        .sidebar h1 a { color: #58a6ff; text-decoration: none; }
-        .sidebar .stat { font-size: 14px; color: #8b949e; margin-bottom: 20px; }
-        .sidebar .stat div { margin: 4px 0; }
-        .sidebar .stat strong { color: #c9d1d9; }
-        .sidebar .nav-title {
-            font-size: 11px; text-transform: uppercase; color: #8b949e;
-            margin-bottom: 6px; letter-spacing: 0.5px;
-        }
-        .sidebar .nav-item {
-            display: flex; justify-content: space-between; padding: 5px 8px;
-            color: #c9d1d9; text-decoration: none; border-radius: 6px; font-size: 13px; margin: 1px 0;
-        }
-        .sidebar .nav-item:hover { background: #1c2128; color: #58a6ff; }
-        .sidebar .nav-group { margin-bottom: 20px; }
-        .sidebar .sync-area { margin-top: auto; padding-top: 16px; }
-        .content { flex: 1; padding: 24px; min-width: 0; }
-        .btn {
-            padding: 8px 16px; border: 1px solid #30363d; border-radius: 6px;
-            cursor: pointer; font-size: 14px; background: #21262d; color: #c9d1d9;
-            display: inline-flex; align-items: center; gap: 6px;
-        }
-        .btn:hover { background: #30363d; }
-        .btn-primary { background: #238636; border-color: #2ea043; color: #fff; }
-        .btn-primary:hover { background: #2ea043; }
-        .btn-copy {
-            padding: 2px 8px; border: 1px solid #30363d; border-radius: 4px;
-            cursor: pointer; font-size: 12px; background: #21262d; color: #8b949e;
-            line-height: 1.4;
-        }
-        .btn-copy:hover { background: #30363d; color: #c9d1d9; }
-
-        .tag { display: inline-block; padding: 2px 8px; background: #1f6feb22; color: #58a6ff; border-radius: 12px; font-size: 11px; }
-        .badge-ws { display: inline-block; padding: 2px 6px; background: #30363d44; color: #8b949e; border-radius: 4px; font-size: 11px; }
-        .badge-dl { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; }
-        .badge-dl.yes { background: #23863633; color: #3fb950; }
-        .badge-dl.no { background: #da363333; color: #f85149; }
-
-        .detail-card {
-            background: #161b22; border: 1px solid #30363d; border-radius: 8px;
-            padding: 24px; max-width: 720px;
-        }
-        .detail-card h1 { font-size: 22px; margin-bottom: 4px; }
-        .detail-card .sub { color: #8b949e; margin-bottom: 20px; font-size: 14px; }
-        .detail-card .sub a { color: #8b949e; }
-        .detail-card .section { margin-bottom: 20px; }
-        .detail-card .section h3 { font-size: 12px; color: #8b949e; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px; }
-        .detail-card .section p { font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
-        .detail-card .meta-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-        .detail-card .player { margin: 16px 0; }
-        .detail-card .player audio { width: 100%; }
-
-        .analysis-block { margin-top: 20px; }
-        .analysis-header { font-size: 16px; font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
-        .analysis-sub { font-size: 12px; color: #8b949e; margin-bottom: 12px; }
-        .metric-group { margin-bottom: 16px; }
-        .metric-title { font-size: 12px; color: #58a6ff; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
-        .metric-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 13px; }
-        .metric-label { flex: 0 0 140px; color: #8b949e; text-transform: capitalize; }
-        .metric-bar-bg { flex: 1; height: 6px; background: #21262d; border-radius: 3px; overflow: hidden; }
-        .metric-bar { height: 100%; border-radius: 3px; transition: width 0.3s; }
-        .metric-val { flex: 0 0 40px; text-align: right; font-family: monospace; font-size: 12px; font-weight: 600; }
-
-        .modal-overlay {
-            position: fixed; inset: 0; background: rgba(1, 4, 9, 0.72);
-            display: none; align-items: center; justify-content: center; z-index: 100;
-        }
-        .modal-overlay.open { display: flex; }
-        .modal {
-            background: #161b22; border: 1px solid #30363d; border-radius: 12px;
-            padding: 28px; width: 100%; max-width: 520px; box-shadow: 0 16px 60px rgba(0,0,0,.5);
-        }
-        .modal h3 { font-size: 17px; color: #e6edf3; margin-bottom: 16px; }
-        .modal .sync-line { font-size: 15px; color: #c9d1d9; margin-bottom: 10px; }
-        .modal .sync-counters { font-size: 13px; color: #8b949e; line-height: 1.8; }
-        .modal .sync-track { font-size: 12px; color: #58a6ff; margin: 10px 0 18px; min-height: 16px; word-break: break-word; }
-        .modal .modal-actions { display: flex; gap: 10px; }
-        .btn-danger { background: #da3633; border-color: #f85149; color: #fff; }
-        .btn-danger:hover { background: #f85149; }
-        .spinner {
-            display: inline-block; width: 14px; height: 14px; border: 2px solid #58a6ff66;
-            border-top-color: #58a6ff; border-radius: 50%; vertical-align: -2px;
-            animation: spin .8s linear infinite; margin-right: 6px;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-    </style>
 </head>
 <body>
 <div class="layout">
@@ -486,7 +389,7 @@ function toggleRefPanel() {
                     <button class="btn-copy" onclick="generateLyrics('{{.ID}}')" title="Сгенерировать из аудио (Whisper)">🎤 Текст из аудио</button>
                     {{end}}
                 </div>
-                <p>{{if .Lyrics}}<span id="copy-lyrics">{{.Lyrics | formatLyrics}}</span>{{else}}<span style="color:#8b949e">— текст не загружен. Нажмите кнопку выше для распознавания из аудио —</span>{{end}}</p>
+                <p>{{if .Lyrics}}<span id="copy-lyrics">{{.Lyrics | formatLyrics}}</span>{{else}}<span style="color:#8f8a83">— текст не загружен. Нажмите кнопку выше для распознавания из аудио —</span>{{end}}</p>
             </div>
 
             {{if and .Prompt (ne .Prompt .Lyrics)}}
@@ -501,7 +404,7 @@ function toggleRefPanel() {
                 <p>ID: {{.ID}}</p>
                 <p>Дата: {{.CreatedAt}}</p>
                 <p>Путь: {{.AudioPath}}</p>
-                <p><a href="https://suno.com/song/{{.ID}}" target="_blank" rel="noopener" style="color:#58a6ff;">🔗 Открыть трек на Suno</a></p>
+                <p><a href="https://suno.com/song/{{.ID}}" target="_blank" rel="noopener" style="color:#ffb454;">🔗 Открыть трек на Suno</a></p>
             </div>
         </div>
 
@@ -518,10 +421,10 @@ function toggleRefPanel() {
                 <button class="btn" onclick="toggleRefPanel()">📐 Сравнить с референсом</button>
             </div>
 
-            <div id="ref-panel" style="display:none;margin-bottom:12px;padding:12px;background:#0d1117;border:1px solid #30363d;border-radius:8px;">
+            <div id="ref-panel" style="display:none;margin-bottom:12px;padding:12px;background:#0b0b10;border:1px solid rgba(255,255,255,.14);border-radius:8px;">
                 <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Выберите референсный трек</div>
                 <form hx-post="/compare/select/{{.ID}}" hx-swap="none" style="margin-bottom:8px;">
-                    <select name="ref_id" style="width:100%;padding:8px;background:#161b22;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;font-size:13px;margin-bottom:8px;">
+                    <select name="ref_id" style="width:100%;padding:8px;background:#12121a;color:#ece7e1;border:1px solid rgba(255,255,255,.14);border-radius:6px;font-size:13px;margin-bottom:8px;">
                         <option value="">— из синхронизированных —</option>
                         {{range $.AllTracks}}
                         {{if .IsDownloaded}}
@@ -531,10 +434,10 @@ function toggleRefPanel() {
                     </select>
                     <button class="btn btn-primary" type="submit" style="width:100%;">Сравнить</button>
                 </form>
-                <div style="border-top:1px solid #30363d;padding-top:8px;">
-                    <div style="font-size:12px;color:#8b949e;margin-bottom:6px;">Или загрузить файл</div>
+                <div style="border-top:1px solid rgba(255,255,255,.14);padding-top:8px;">
+                    <div style="font-size:12px;color:#8f8a83;margin-bottom:6px;">Или загрузить файл</div>
                     <form hx-post="/compare/upload/{{.ID}}" hx-swap="none" enctype="multipart/form-data">
-                        <input type="file" name="ref_file" accept="audio/*" style="width:100%;padding:6px;background:#161b22;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;font-size:12px;margin-bottom:8px;">
+                        <input type="file" name="ref_file" accept="audio/*" style="width:100%;padding:6px;background:#12121a;color:#ece7e1;border:1px solid rgba(255,255,255,.14);border-radius:6px;font-size:12px;margin-bottom:8px;">
                         <button class="btn btn-primary" type="submit" style="width:100%;">Загрузить и сравнить</button>
                     </form>
                 </div>

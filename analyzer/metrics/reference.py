@@ -184,7 +184,7 @@ def _generate_comparison_chart(target_bands: list, ref_bands: list,
                                 target_env: list, ref_env: list,
                                 sr: int) -> str:
     try:
-        fig, axes = plt.subplots(1, 2, figsize=(10, 4), facecolor='#0d1117')
+        fig, axes = plt.subplots(1, 2, figsize=(10, 4), facecolor='#0b0b10')
 
         band_labels = [b[0].replace('_', ' ').title() for b in BANDS]
 
@@ -192,26 +192,26 @@ def _generate_comparison_chart(target_bands: list, ref_bands: list,
         w = 0.35
 
         ax = axes[0]
-        ax.set_facecolor('#161b22')
+        ax.set_facecolor('#12121a')
         tb_db = [20 * np.log10(max(e, 1e-10)) for e in target_bands]
         rb_db = [20 * np.log10(max(e, 1e-10)) for e in ref_bands]
         offset = -np.mean(tb_db) if tb_db else 0
         tb_db = [v + offset for v in tb_db]
         rb_db = [v + offset for v in rb_db]
 
-        ax.bar(x - w/2, tb_db, w, label='Target', color='#58a6ff', alpha=0.9)
-        ax.bar(x + w/2, rb_db, w, label='Reference', color='#f0883e', alpha=0.9)
+        ax.bar(x - w/2, tb_db, w, label='Target', color='#ffb454', alpha=0.9)
+        ax.bar(x + w/2, rb_db, w, label='Reference', color='#8f8a83', alpha=0.9)
         ax.set_xticks(x)
-        ax.set_xticklabels(band_labels, fontsize=8, color='#8b949e')
-        ax.set_ylabel('Level (dB rel.)', fontsize=9, color='#8b949e')
-        ax.set_title('EQ Curve Comparison', fontsize=11, color='#c9d1d9')
-        ax.legend(fontsize=8, facecolor='#161b22', labelcolor='#c9d1d9')
-        ax.tick_params(colors='#8b949e')
+        ax.set_xticklabels(band_labels, fontsize=8, color='#8f8a83')
+        ax.set_ylabel('Level (dB rel.)', fontsize=9, color='#8f8a83')
+        ax.set_title('EQ Curve Comparison', fontsize=11, color='#ece7e1')
+        ax.legend(fontsize=8, facecolor='#12121a', labelcolor='#ece7e1')
+        ax.tick_params(colors='#8f8a83')
         for spine in ax.spines.values():
-            spine.set_color('#30363d')
+            spine.set_color('#34343b')
 
         ax2 = axes[1]
-        ax2.set_facecolor('#161b22')
+        ax2.set_facecolor('#12121a')
         if target_env and ref_env:
             min_l = min(len(target_env), len(ref_env))
             t_norm = np.array(target_env[:min_l])
@@ -219,21 +219,21 @@ def _generate_comparison_chart(target_bands: list, ref_bands: list,
             t_norm = t_norm / (np.max(t_norm) or 1)
             r_norm = r_norm / (np.max(r_norm) or 1)
             time_axis = np.arange(min_l) * 512 / sr
-            ax2.plot(time_axis, t_norm, color='#58a6ff', alpha=0.8, linewidth=1, label='Target')
-            ax2.plot(time_axis, r_norm, color='#f0883e', alpha=0.8, linewidth=1, label='Reference')
-        ax2.set_xlabel('Time (s)', fontsize=9, color='#8b949e')
-        ax2.set_ylabel('Normalized RMS', fontsize=9, color='#8b949e')
-        ax2.set_title('Dynamic Envelope', fontsize=11, color='#c9d1d9')
-        ax2.legend(fontsize=8, facecolor='#161b22', labelcolor='#c9d1d9')
-        ax2.tick_params(colors='#8b949e')
+            ax2.plot(time_axis, t_norm, color='#ffb454', alpha=0.8, linewidth=1, label='Target')
+            ax2.plot(time_axis, r_norm, color='#8f8a83', alpha=0.8, linewidth=1, label='Reference')
+        ax2.set_xlabel('Time (s)', fontsize=9, color='#8f8a83')
+        ax2.set_ylabel('Normalized RMS', fontsize=9, color='#8f8a83')
+        ax2.set_title('Dynamic Envelope', fontsize=11, color='#ece7e1')
+        ax2.legend(fontsize=8, facecolor='#12121a', labelcolor='#ece7e1')
+        ax2.tick_params(colors='#8f8a83')
         for spine in ax2.spines.values():
-            spine.set_color('#30363d')
+            spine.set_color('#34343b')
 
         plt.tight_layout()
         plot_dir = os.environ.get('ANALYZER_PLOT_DIR', '/tmp/analyzer_plots')
         os.makedirs(plot_dir, exist_ok=True)
         plot_path = os.path.join(plot_dir, f'reference_{abs(hash(str(target_bands)))}.png')
-        plt.savefig(plot_path, dpi=100, bbox_inches='tight', facecolor='#0d1117')
+        plt.savefig(plot_path, dpi=100, bbox_inches='tight', facecolor='#0b0b10')
         plt.close(fig)
         return plot_path
     except Exception as e:

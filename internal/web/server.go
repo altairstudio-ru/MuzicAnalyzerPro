@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -29,16 +30,19 @@ import (
 //go:embed templates/*.html
 var templateFS embed.FS
 
+//go:embed all:static
+var staticFS embed.FS
+
 // Server is the web UI server.
 type Server struct {
-	Router      *chi.Mux
-	Manager     *library.Manager
-	DB          *sql.DB
-	Tmpl        *template.Template
-	Analyzer    *analyzer.Analyzer
-	scraperCfg  scraper.ScrapeConfig
-	scraper     *scraper.SunoScraper
-	scraperMu   sync.Mutex
+	Router     *chi.Mux
+	Manager    *library.Manager
+	DB         *sql.DB
+	Tmpl       *template.Template
+	Analyzer   *analyzer.Analyzer
+	scraperCfg scraper.ScrapeConfig
+	scraper    *scraper.SunoScraper
+	scraperMu  sync.Mutex
 }
 
 // pageData holds common data available to all templates.
@@ -70,12 +74,12 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 	scraperCfg.SessionCookie = mgr.Config.Suno.SessionCookie
 
 	s := &Server{
-		Router:      chi.NewRouter(),
-		Manager:     mgr,
-		DB:          mgr.DB,
-		Tmpl:        tmpl,
-		Analyzer:    anz,
-		scraperCfg:  scraperCfg,
+		Router:     chi.NewRouter(),
+		Manager:    mgr,
+		DB:         mgr.DB,
+		Tmpl:       tmpl,
+		Analyzer:   anz,
+		scraperCfg: scraperCfg,
 	}
 
 	s.Router.Use(middleware.Logger)
@@ -97,6 +101,10 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 	s.Router.Post("/compare/upload/{id}", s.compareUpload)
 	s.Router.Post("/compare/select/{id}", s.compareSelect)
 	s.Router.Get("/plots/*", s.servePlot)
+
+	// Static assets (style.css, woff2 fonts).
+	assets, _ := fs.Sub(staticFS, "static")
+	s.Router.Handle("/assets/*", http.StripPrefix("/assets/", http.FileServer(http.FS(assets))))
 	s.Router.Post("/scrape-lyrics/{id}", s.scrapeLyricsHandler)
 
 	return s, nil
@@ -193,17 +201,17 @@ func (s *Server) syncStatusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	st := s.Manager.GetSyncStatus()
 	json.NewEncoder(w).Encode(map[string]any{
-		"running":     st.Running,
-		"phase":       st.Phase,
-		"processed":   st.Processed,
-		"new":         st.New,
-		"downloaded":  st.Downloaded,
-		"errors":      st.Errors,
-		"last_track":  st.LastTrack,
-		"started_at":  st.StartedAt,
-		"finished_at": st.FinishedAt,
-		"error":       st.ErrMsg,
-		"stopped":     st.Stopped,
+		"running":      st.Running,
+		"phase":        st.Phase,
+		"processed":    st.Processed,
+		"new":          st.New,
+		"downloaded":   st.Downloaded,
+		"errors":       st.Errors,
+		"last_track":   st.LastTrack,
+		"started_at":   st.StartedAt,
+		"finished_at":  st.FinishedAt,
+		"error":        st.ErrMsg,
+		"stopped":      st.Stopped,
 		"waiting_auth": st.WaitingAuth,
 	})
 }
@@ -572,8 +580,8 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 
 // authHandler receives a Clerk JWT from the browser extension.
 type authRequest struct {
-	Token          string `json:"token"`
-	SessionCookie  string `json:"session_cookie"`
+	Token         string `json:"token"`
+	SessionCookie string `json:"session_cookie"`
 }
 
 func (s *Server) authHandler(w http.ResponseWriter, r *http.Request) {

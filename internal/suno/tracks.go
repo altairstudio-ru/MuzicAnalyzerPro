@@ -13,41 +13,40 @@ import (
 // apiTrack represents the raw Suno API response for a track (new v3 API).
 // Field mapping based on the undocumented API response.
 type apiTrack struct {
-	ID              string `json:"id"`
-	Title           string `json:"title"`
-	DisplayName     string `json:"display_name"`
-	SongName        string `json:"song_name"`
-	Artist          string `json:"artist"`
-	ArtistName      string `json:"artist_name"`
-	Prompt          string `json:"prompt"`
-	Lyrics          string `json:"lyrics"`
-	LyricsGenerated string `json:"lyrics_generated"`
-	Tags            string `json:"tags"`           // comma-separated or JSON
-	TagsArray       []any  `json:"tags_array"`     // if it comes as array
-	WorkspaceName   string `json:"workspace_name"`
-	Workspace       string `json:"workspace"`      // sometimes nested
-	Project         apiProject `json:"project"`    // v3 API: project (a.k.a. workspace)
-	Albums          []apiAlbum `json:"albums"`     // v3 API: albums the track belongs to
-	Duration        int    `json:"duration"`
-	CreatedAt       string `json:"created_at"`
-	CreatedAtRaw    string `json:"createdAt"`      // alternative casing
-	AudioURL        string `json:"audio_url"`
-	AudioPath       string `json:"audio_path"`     // alternative: CDN path
-	IsPublic        bool   `json:"is_public"`
-	Status          string `json:"status"`         // "complete", "generating"
+	ID              string     `json:"id"`
+	Title           string     `json:"title"`
+	DisplayName     string     `json:"display_name"`
+	SongName        string     `json:"song_name"`
+	Artist          string     `json:"artist"`
+	ArtistName      string     `json:"artist_name"`
+	Prompt          string     `json:"prompt"`
+	Lyrics          string     `json:"lyrics"`
+	LyricsGenerated string     `json:"lyrics_generated"`
+	Tags            string     `json:"tags"`       // comma-separated or JSON
+	TagsArray       []any      `json:"tags_array"` // if it comes as array
+	WorkspaceName   string     `json:"workspace_name"`
+	Workspace       string     `json:"workspace"` // sometimes nested
+	Project         apiProject `json:"project"`   // v3 API: project (a.k.a. workspace)
+	Albums          []apiAlbum `json:"albums"`    // v3 API: albums the track belongs to
+	Duration        int        `json:"duration"`
+	CreatedAt       string     `json:"created_at"`
+	CreatedAtRaw    string     `json:"createdAt"` // alternative casing
+	AudioURL        string     `json:"audio_url"`
+	AudioPath       string     `json:"audio_path"` // alternative: CDN path
+	IsPublic        bool       `json:"is_public"`
+	Status          string     `json:"status"` // "complete", "generating"
 
 	// New v3 API fields
-	PlayCount        int        `json:"play_count"`
-	UpvoteCount      int        `json:"upvote_count"`
-	EntityType       string     `json:"entity_type"`
-	VideoURL         string     `json:"video_url"`
-	AudioURLNew      string     `json:"audio_url"`    // duplicate, but keep for compatibility
-	MediaURLs        []MediaURL `json:"media_urls"`
-	ImageURL         string     `json:"image_url"`
-	ImageLargeURL    string     `json:"image_large_url"`
-	MajorModelVersion string    `json:"major_model_version"`
-	ModelName        string     `json:"model_name"`
-	Metadata         TrackMetadata `json:"metadata"`
+	PlayCount         int           `json:"play_count"`
+	UpvoteCount       int           `json:"upvote_count"`
+	EntityType        string        `json:"entity_type"`
+	VideoURL          string        `json:"video_url"`
+	MediaURLs         []MediaURL    `json:"media_urls"`
+	ImageURL          string        `json:"image_url"`
+	ImageLargeURL     string        `json:"image_large_url"`
+	MajorModelVersion string        `json:"major_model_version"`
+	ModelName         string        `json:"model_name"`
+	Metadata          TrackMetadata `json:"metadata"`
 }
 
 type MediaURL struct {
@@ -58,7 +57,7 @@ type MediaURL struct {
 }
 
 type TrackMetadata struct {
-	Tags  string `json:"tags"`
+	Tags   string `json:"tags"`
 	Prompt string `json:"prompt"`
 }
 
