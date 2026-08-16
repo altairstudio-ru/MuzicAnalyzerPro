@@ -258,6 +258,26 @@ body {
 .badge-dl.yes { background: var(--ok-dim); color: var(--ok); border-color: rgba(110, 231, 160, .25); }
 .badge-dl.no { background: transparent; color: var(--text-faint); border-color: var(--line); }
 
+.badge-metric {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    border: 1px solid var(--line);
+    color: var(--text-muted);
+}
+.badge-metric.liked { color: #f07178; border-color: rgba(240, 113, 120, .35); }
+.badge-type {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    text-transform: lowercase;
+}
+
 /* ---------- Track list (editorial) ---------- */
 
 #track-list { border-top: 1px solid var(--line); }
@@ -289,6 +309,65 @@ body {
 
 .track-item .player { margin-top: 10px; }
 .track-item .player audio { width: 100%; height: 34px; }
+
+.btn-play {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--bg-raised);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 13px;
+}
+.btn-play:hover { border-color: var(--accent); color: var(--accent); }
+
+.player-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 18px;
+    background: rgba(18, 17, 16, 0.96);
+    border-top: 1px solid var(--line);
+    backdrop-filter: blur(8px);
+}
+.player-bar[hidden] { display: none !important; }
+.player-bar-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 180px;
+    max-width: 320px;
+}
+.player-bar-play {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: var(--accent-dim);
+    color: var(--accent);
+    cursor: pointer;
+}
+.player-bar-title {
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.player-bar audio {
+    flex: 1;
+    min-width: 0;
+    height: 36px;
+}
+body { padding-bottom: 72px; }
 
 /* ---------- Detail ---------- */
 
@@ -457,7 +536,31 @@ body {
 .album-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 6px; word-break: break-word; }
 .album-meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
 
-.suggestion-list { display: flex; flex-direction: column; gap: 6px; }
+.suggestion-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.suggestion-panel {
+    margin: 22px 0 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0 14px;
+    background: var(--bg-panel);
+}
+.suggestion-panel summary {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 0;
+    cursor: pointer;
+    font-size: 15px; font-weight: 600; color: var(--text);
+    list-style: none; user-select: none;
+}
+.suggestion-panel summary::-webkit-details-marker { display: none; }
+.suggestion-panel summary::before {
+    content: '▸'; color: var(--text-faint); transition: transform .15s;
+}
+.suggestion-panel[open] summary::before { transform: rotate(90deg); }
+.suggestion-panel .count {
+    font-family: var(--font-mono); font-size: 10px; color: var(--text-faint);
+    margin-left: 5px;
+}
+.suggestion-panel .suggestion-list { margin-bottom: 14px; }
 .suggestion-row {
     display: flex; justify-content: space-between; align-items: center; gap: 10px;
     padding: 10px 14px;
@@ -474,8 +577,8 @@ body {
     border: 1px solid var(--accent);
     border-radius: 8px;
     font-size: 13px;
-    position: sticky; top: 8px; z-index: 20;
 }
+.bulk-bar[hidden] { display: none; }
 .bulk-bar strong { font-family: var(--font-mono); }
 .bulk-bar select, .bulk-bar input {
     padding: 6px 8px;

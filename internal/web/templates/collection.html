@@ -7,7 +7,7 @@
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <link rel="stylesheet" href="/assets/style.css">
 </head>
-<body>
+<body hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
 <div class="layout">
     <aside class="sidebar">
         <h1><a href="/">🎵 Suno Archiver</a></h1>
@@ -35,7 +35,7 @@
             </button>
         </div>
     </aside>
-    <main class="content">
+    <main class="content" id="main-content">
         <div class="detail-card" style="max-width:860px;">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
                 <div>
@@ -77,6 +77,11 @@
                             {{if .Notes}}<span class="tl-notes">— {{.Notes}}</span>{{end}}
                         </span>
                         <span class="tl-actions">
+                            {{if .Track.IsDownloaded}}
+                            <button type="button" class="btn-copy"
+                                    data-play-src="/audio/{{.Track.ID}}"
+                                    data-play-title="{{.Track.Title}}" title="Слушать">▶</button>
+                            {{end}}
                             <button class="btn-copy" onclick="moveRow(this,-1)" title="Выше">↑</button>
                             <button class="btn-copy" onclick="moveRow(this,1)" title="Ниже">↓</button>
                             <button class="btn-copy" onclick="removeRow(this)" title="Убрать">🗑</button>
@@ -88,6 +93,8 @@
         </div>
     </main>
 </div>
+
+{{template "player" .}}
 
 <div id="sync-modal" class="modal-overlay">
     <div class="modal">

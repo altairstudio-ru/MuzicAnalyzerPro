@@ -333,7 +333,7 @@ function toggleRefPanel() {
         }
     </script>
 </head>
-<body>
+<body hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
 <div class="layout">
     <aside class="sidebar">
         <h1><a href="/">🎵 Suno Archiver</a></h1>
@@ -361,7 +361,7 @@ function toggleRefPanel() {
             </button>
         </div>
     </aside>
-    <main class="content">
+    <main class="content" id="main-content">
         {{with index .Tracks 0}}
         <div class="detail-card">
             <h1>{{.Title}}</h1>
@@ -375,15 +375,20 @@ function toggleRefPanel() {
                 <span class="badge-dl {{if .IsDownloaded}}yes{{else}}no{{end}}">
                     {{if .IsDownloaded}}✓ Скачано{{else}}✗ Не скачано{{end}}
                 </span>
+                {{if .IsLiked}}<span class="badge-metric liked" title="Лайк">♥</span>{{end}}
+                {{if .UpvoteCount}}<span class="badge-metric" title="Лайки">♥ {{.UpvoteCount}}</span>{{end}}
+                {{if .PlayCount}}<span class="badge-metric" title="Прослушивания">▶ {{.PlayCount}}</span>{{end}}
+                {{if .TrackType}}<span class="badge-type">{{.TrackType}}</span>{{end}}
+                {{if .ModelName}}<span class="badge-metric" title="Модель">{{.ModelName}}</span>{{end}}
                 {{if .FileSize}}<span>📦 {{.FileSize}} bytes</span>{{end}}
                 {{if .AudioHash}}<span>🔐 {{.AudioHash}}</span>{{end}}
             </div>
 
             {{if .IsDownloaded}}
             <div class="player">
-                <audio controls>
-                    <source src="/audio/{{.ID}}" type="audio/mpeg">
-                </audio>
+                <button type="button" class="btn-play"
+                        data-play-src="/audio/{{.ID}}"
+                        data-play-title="{{.Title}}">▶ Слушать</button>
             </div>
             {{end}}
 
@@ -511,6 +516,8 @@ function toggleRefPanel() {
         {{end}}
     </main>
 </div>
+
+{{template "player" .}}
 
 <div id="sync-modal" class="modal-overlay">
     <div class="modal">

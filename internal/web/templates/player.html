@@ -1,0 +1,69 @@
+{{define "player"}}
+<div id="player-bar" class="player-bar" hidden>
+    <div class="player-bar-info">
+        <button type="button" class="player-bar-play" id="player-bar-toggle" title="Play/Pause" onclick="toggleGlobalPlayback()">▶</button>
+        <div class="player-bar-meta">
+            <div class="player-bar-title" id="player-bar-title">—</div>
+        </div>
+    </div>
+    <audio id="global-audio" controls preload="none"></audio>
+</div>
+<script>
+(function () {
+    if (window.__sunoPlayerInit) return;
+    window.__sunoPlayerInit = true;
+
+    window.playTrack = function (src, title) {
+        const audio = document.getElementById('global-audio');
+        const bar = document.getElementById('player-bar');
+        const titleEl = document.getElementById('player-bar-title');
+        const toggle = document.getElementById('player-bar-toggle');
+        if (!audio || !bar || !src) return;
+        bar.hidden = false;
+        if (titleEl) titleEl.textContent = title || 'Трек';
+        const abs = new URL(src, window.location.origin).href;
+        if (audio.src !== abs) {
+            audio.src = src;
+            audio.load();
+        }
+        audio.play().then(function () {
+            if (toggle) toggle.textContent = '⏸';
+        }).catch(function () {});
+    };
+
+    window.toggleGlobalPlayback = function () {
+        const audio = document.getElementById('global-audio');
+        const toggle = document.getElementById('player-bar-toggle');
+        if (!audio || !audio.src) return;
+        if (audio.paused) {
+            audio.play().then(function () {
+                if (toggle) toggle.textContent = '⏸';
+            }).catch(function () {});
+        } else {
+            audio.pause();
+            if (toggle) toggle.textContent = '▶';
+        }
+    };
+
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('[data-play-src]');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        window.playTrack(btn.getAttribute('data-play-src'), btn.getAttribute('data-play-title') || '');
+    });
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const audio = document.getElementById('global-audio');
+        const toggle = document.getElementById('player-bar-toggle');
+        if (!audio) return;
+        audio.addEventListener('play', function () {
+            if (toggle) toggle.textContent = '⏸';
+        });
+        audio.addEventListener('pause', function () {
+            if (toggle) toggle.textContent = '▶';
+        });
+    });
+})();
+</script>
+{{end}}

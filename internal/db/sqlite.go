@@ -30,8 +30,13 @@ func Init(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
 
-	// Migrate existing databases: add lyrics_path if missing
+	// Migrate existing databases: add columns if missing (errors ignored when already present)
 	db.Exec("ALTER TABLE tracks ADD COLUMN lyrics_path TEXT NOT NULL DEFAULT ''")
+	db.Exec("ALTER TABLE tracks ADD COLUMN upvote_count INTEGER NOT NULL DEFAULT 0")
+	db.Exec("ALTER TABLE tracks ADD COLUMN play_count INTEGER NOT NULL DEFAULT 0")
+	db.Exec("ALTER TABLE tracks ADD COLUMN is_liked INTEGER NOT NULL DEFAULT 0")
+	db.Exec("ALTER TABLE tracks ADD COLUMN track_type TEXT NOT NULL DEFAULT ''")
+	db.Exec("ALTER TABLE tracks ADD COLUMN model_name TEXT NOT NULL DEFAULT ''")
 
 	// Seed default labels for curation (single, album, compilation, ...)
 	if err := EnsureDefaultLabels(db); err != nil {

@@ -7,7 +7,7 @@
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <link rel="stylesheet" href="/assets/style.css">
 </head>
-<body>
+<body hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
 <div class="layout">
     <aside class="sidebar">
         <h1>🎵 Suno Archiver</h1>
@@ -46,7 +46,7 @@
             </form>
         </div>
         <div class="filters">
-            <a href="/" class="filter-chip{{if not .Filter.Workspace}}{{if not .Filter.Label}} active{{end}}{{end}}">Все</a>
+            <a href="/" class="filter-chip{{if not .Filter.Workspace}}{{if not .Filter.Label}}{{if not .Filter.TrackType}} active{{end}}{{end}}{{end}}">Все</a>
             {{range .Workspaces}}
             <a href="/?workspace={{.Name}}" class="filter-chip{{if eq $.Filter.Workspace .Name}} active{{end}}">{{.Name}}</a>
             {{end}}
@@ -57,12 +57,17 @@
             {{end}}
             <button class="filter-chip" onclick="newLabel()" title="Создать метку">+</button>
         </div>
+        <div class="filters">
+            <a href="/?track_type=full_song" class="filter-chip{{if eq .Filter.TrackType "full_song"}} active{{end}}">full_song</a>
+            <a href="/?track_type=cover" class="filter-chip{{if eq .Filter.TrackType "cover"}} active{{end}}">cover</a>
+            <a href="/?track_type=extend" class="filter-chip{{if eq .Filter.TrackType "extend"}} active{{end}}">extend</a>
+        </div>
 
-        {{if .Albums}}
         <div class="section-head">
             <h2>Сборники</h2>
             <button class="btn btn-copy" onclick="newAlbum()">+ Сборник</button>
         </div>
+        {{if .Albums}}
         <div class="album-feed">
             {{range .Albums}}
             <a class="album-card" href="/collections/{{.ID}}">
@@ -72,20 +77,22 @@
             </a>
             {{end}}
         </div>
+        {{else}}
+        <p class="hint" style="margin:0 0 6px;">⚠️ Сборников пока нет — создайте первый: <code>+ Сборник</code></p>
         {{end}}
 
         {{if .Suggestions}}
-        <div class="section-head">
-            <h2>Возможные варианты</h2>
-        </div>
-        <div class="suggestion-list">
-            {{range .Suggestions}}
-            <div class="suggestion-row" data-title="{{.Title}}" data-ids="{{range .TrackIDs}}{{.}},{{end}}">
-                <div class="suggestion-title">{{.Title}} <span class="count">{{len .TrackIDs}}{{if not .AllDownloaded}}<span class="warn" title="не все скачаны">*</span>{{end}}</span></div>
-                <button class="btn btn-copy" onclick="createSuggestGroup(this)">📦 Создать группу</button>
+        <details class="suggestion-panel">
+            <summary>Возможные варианты <span class="count">{{len .Suggestions}}</span></summary>
+            <div class="suggestion-list">
+                {{range .Suggestions}}
+                <div class="suggestion-row" data-title="{{.Title}}" data-ids="{{range .TrackIDs}}{{.}},{{end}}">
+                    <div class="suggestion-title">{{.Title}} <span class="count">{{len .TrackIDs}}{{if not .AllDownloaded}}<span class="warn" title="не все скачаны">*</span>{{end}}</span></div>
+                    <button class="btn btn-copy" onclick="createSuggestGroup(this)">📦 Создать группу</button>
+                </div>
+                {{end}}
             </div>
-            {{end}}
-        </div>
+        </details>
         {{end}}
 
         <div id="bulk-bar" class="bulk-bar" hidden>
@@ -118,6 +125,10 @@
                     <span class="badge-dl {{if .IsDownloaded}}yes{{else}}no{{end}}">
                         {{if .IsDownloaded}}✓ скачано{{else}}✗{{end}}
                     </span>
+                    {{if .IsLiked}}<span class="badge-metric liked" title="Лайк">♥</span>{{end}}
+                    {{if .UpvoteCount}}<span class="badge-metric" title="Лайки">♥ {{.UpvoteCount}}</span>{{end}}
+                    {{if .PlayCount}}<span class="badge-metric" title="Прослушивания">▶ {{.PlayCount}}</span>{{end}}
+                    {{if .TrackType}}<span class="badge-type">{{.TrackType}}</span>{{end}}
                     {{if .FileSize}}<span>{{.FileSize}} bytes</span>{{end}}
                 </div>
                 {{if index $.TrackLabels .ID}}
@@ -137,9 +148,9 @@
                 {{end}}
                 {{if .IsDownloaded}}
                 <div class="player">
-                    <audio controls preload="none">
-                        <source src="/audio/{{.ID}}" type="audio/mpeg">
-                    </audio>
+                    <button type="button" class="btn-play"
+                            data-play-src="/audio/{{.ID}}"
+                            data-play-title="{{.Title}}">▶ Слушать</button>
                 </div>
                 {{end}}
             </div>
@@ -153,6 +164,8 @@
         {{end}}
     </main>
 </div>
+
+{{template "player" .}}
 
 <div id="sync-modal" class="modal-overlay">
     <div class="modal">

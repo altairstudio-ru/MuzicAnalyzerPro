@@ -16,6 +16,11 @@ type Track struct {
 	LyricsPath   string   `json:"lyrics_path"`
 	IsDownloaded bool     `json:"is_downloaded"`
 	FileSize     int64    `json:"file_size"`
+	UpvoteCount  int      `json:"upvote_count"`
+	PlayCount    int      `json:"play_count"`
+	IsLiked      bool     `json:"is_liked"`
+	TrackType    string   `json:"track_type"` // cover | extend | full_song | ""
+	ModelName    string   `json:"model_name"`
 }
 
 // Workspace represents a Suno workspace/collection.
@@ -31,6 +36,7 @@ type TrackFilter struct {
 	Tag        string
 	Label      string // user-defined curation label name
 	AlbumID    string // album/collection the track belongs to
+	TrackType  string // cover | extend | full_song
 	Search     string // search in title, prompt, lyrics
 	Downloaded *bool  // nil = all, true/false filter
 	Limit      int

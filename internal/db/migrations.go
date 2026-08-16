@@ -17,6 +17,11 @@ CREATE TABLE IF NOT EXISTS tracks (
     lyrics_path   TEXT NOT NULL DEFAULT '',
     is_downloaded INTEGER NOT NULL DEFAULT 0,
     file_size     INTEGER NOT NULL DEFAULT 0,
+    upvote_count  INTEGER NOT NULL DEFAULT 0,
+    play_count    INTEGER NOT NULL DEFAULT 0,
+    is_liked      INTEGER NOT NULL DEFAULT 0,
+    track_type    TEXT NOT NULL DEFAULT '',
+    model_name    TEXT NOT NULL DEFAULT '',
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

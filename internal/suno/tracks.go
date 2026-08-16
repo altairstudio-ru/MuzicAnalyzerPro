@@ -39,6 +39,7 @@ type apiTrack struct {
 	// New v3 API fields
 	PlayCount         int           `json:"play_count"`
 	UpvoteCount       int           `json:"upvote_count"`
+	IsLiked           bool          `json:"is_liked"`
 	EntityType        string        `json:"entity_type"`
 	VideoURL          string        `json:"video_url"`
 	MediaURLs         []MediaURL    `json:"media_urls"`
@@ -59,6 +60,7 @@ type MediaURL struct {
 type TrackMetadata struct {
 	Tags   string `json:"tags"`
 	Prompt string `json:"prompt"`
+	Type   string `json:"type"` // gen | cover | extend | ...
 }
 
 // apiProject is the v3 API's project object — the new name for a workspace.
@@ -225,15 +227,37 @@ func convertTrack(t apiTrack) models.Track {
 	workspace := firstNonEmpty(t.Project.Name, t.Workspace, t.WorkspaceName)
 
 	return models.Track{
-		ID:        t.ID,
-		Title:     firstNonEmpty(t.Title, t.DisplayName, t.SongName),
-		Artist:    firstNonEmpty(t.Artist, t.ArtistName),
-		Prompt:    prompt,
-		Lyrics:    firstNonEmpty(t.Lyrics, t.LyricsGenerated),
-		Tags:      tags,
-		Workspace: workspace,
-		Duration:  t.Duration,
-		CreatedAt: firstNonEmpty(t.CreatedAt, t.CreatedAtRaw),
+		ID:          t.ID,
+		Title:       firstNonEmpty(t.Title, t.DisplayName, t.SongName),
+		Artist:      firstNonEmpty(t.Artist, t.ArtistName),
+		Prompt:      prompt,
+		Lyrics:      firstNonEmpty(t.Lyrics, t.LyricsGenerated),
+		Tags:        tags,
+		Workspace:   workspace,
+		Duration:    t.Duration,
+		CreatedAt:   firstNonEmpty(t.CreatedAt, t.CreatedAtRaw),
+		UpvoteCount: t.UpvoteCount,
+		PlayCount:   t.PlayCount,
+		IsLiked:     t.IsLiked,
+		TrackType:   deriveTrackType(t.Metadata.Type, t.EntityType),
+		ModelName:   t.ModelName,
+	}
+}
+
+// deriveTrackType maps Suno API type/entity fields to a stable local value.
+// Known values from community clients: metadata.type = gen|cover|extend;
+// entity_type may repeat similar strings. Unknown values stay empty.
+func deriveTrackType(metaType, entityType string) string {
+	raw := strings.ToLower(strings.TrimSpace(firstNonEmpty(metaType, entityType)))
+	switch raw {
+	case "cover":
+		return "cover"
+	case "extend":
+		return "extend"
+	case "gen", "generate", "generated", "full_song", "full-song", "fullsong", "song":
+		return "full_song"
+	default:
+		return ""
 	}
 }
 

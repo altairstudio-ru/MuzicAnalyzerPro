@@ -173,7 +173,8 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		Workspace: r.URL.Query().Get("workspace"),
 		Search:    r.URL.Query().Get("search"),
 		Label:     r.URL.Query().Get("label"),
-		AlbumID:    r.URL.Query().Get("collection"),
+		AlbumID:   r.URL.Query().Get("collection"),
+		TrackType: r.URL.Query().Get("track_type"),
 		Limit:     100,
 	}
 

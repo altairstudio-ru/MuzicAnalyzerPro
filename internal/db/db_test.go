@@ -86,6 +86,43 @@ func TestListTracks(t *testing.T) {
 	}
 }
 
+func TestTrackSunoMetricsRoundTrip(t *testing.T) {
+	db := newTestDB(t)
+	defer db.Close()
+
+	track := &models.Track{
+		ID:          "metrics-1",
+		Title:       "Liked Song",
+		UpvoteCount: 42,
+		PlayCount:   1000,
+		IsLiked:     true,
+		TrackType:   "cover",
+		ModelName:   "chirp-v3",
+	}
+	if err := UpsertTrack(db, track); err != nil {
+		t.Fatalf("UpsertTrack: %v", err)
+	}
+
+	got, err := GetTrack(db, "metrics-1")
+	if err != nil || got == nil {
+		t.Fatalf("GetTrack: %v %v", got, err)
+	}
+	if got.UpvoteCount != 42 || got.PlayCount != 1000 || !got.IsLiked {
+		t.Errorf("metrics = upvote=%d play=%d liked=%v", got.UpvoteCount, got.PlayCount, got.IsLiked)
+	}
+	if got.TrackType != "cover" || got.ModelName != "chirp-v3" {
+		t.Errorf("type/model = %q %q", got.TrackType, got.ModelName)
+	}
+
+	list, err := ListTracks(db, models.TrackFilter{TrackType: "cover"})
+	if err != nil {
+		t.Fatalf("ListTracks: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != "metrics-1" {
+		t.Errorf("track_type filter: got %v", ids(list))
+	}
+}
+
 func TestWorkspaceCRUD(t *testing.T) {
 	db := newTestDB(t)
 	defer db.Close()

@@ -255,3 +255,62 @@ func TestVariantCompareDuplicateRejected(t *testing.T) {
 		t.Fatalf("compare-status running = %v, want true", status)
 	}
 }
+
+func TestSunoMetricsAndGlobalPlayerUI(t *testing.T) {
+	ts, database := newTestServer(t)
+
+	tr := &models.Track{
+		ID: "ui-m1", Title: "Metric Song", IsDownloaded: true,
+		UpvoteCount: 5, PlayCount: 9, TrackType: "cover", IsLiked: true,
+	}
+	if err := db.UpsertTrack(database, tr); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	resp, err := http.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	s := string(body)
+	for _, want := range []string{
+		`id="player-bar"`, `id="global-audio"`, `data-play-src="/audio/ui-m1"`,
+		`track_type=cover`, "♥ 5", "▶ 9", `hx-boost="true"`, `id="main-content"`,
+		`badge-type">cover`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("dashboard missing %q", want)
+		}
+	}
+
+	resp, err = http.Get(ts.URL + "/?track_type=cover")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	s = string(body)
+	if !strings.Contains(s, "Metric Song") {
+		t.Error("track_type filter did not return seeded track")
+	}
+	if !strings.Contains(s, `track_type=cover`) || !strings.Contains(s, "active") {
+		t.Error("expected active cover filter chip")
+	}
+
+	resp, err = http.Get(ts.URL + "/tracks/ui-m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	s = string(body)
+	for _, want := range []string{`id="player-bar"`, `data-play-src="/audio/ui-m1"`, "♥ 5", "▶ 9", "cover"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("detail missing %q", want)
+		}
+	}
+}

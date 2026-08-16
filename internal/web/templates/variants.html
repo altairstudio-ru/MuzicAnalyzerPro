@@ -7,7 +7,7 @@
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <link rel="stylesheet" href="/assets/style.css">
 </head>
-<body>
+<body hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
 <div class="layout">
     <aside class="sidebar">
         <h1><a href="/">🎵 Suno Archiver</a></h1>
@@ -35,7 +35,7 @@
             </button>
         </div>
     </aside>
-    <main class="content">
+    <main class="content" id="main-content">
         <div class="detail-card" style="max-width:900px;">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
                 <div>
@@ -74,6 +74,9 @@
                     <span class="tl-actions">
                         <span class="badge-dl {{if .IsDownloaded}}yes{{else}}no{{end}}">{{if .IsDownloaded}}✓ скачано{{else}}✗{{end}}</span>
                         {{if .IsDownloaded}}
+                        <button type="button" class="btn-copy"
+                                data-play-src="/audio/{{.ID}}"
+                                data-play-title="{{.Title}}" title="Слушать">▶</button>
                         {{if ne .ID $.VariantGroup.Group.BestTrackID}}<button class="btn-copy" onclick="setBest('{{.ID}}')">★ Сделать лучшим</button>{{end}}
                         {{end}}
                     </span>
@@ -83,6 +86,8 @@
         </div>
     </main>
 </div>
+
+{{template "player" .}}
 
 <div id="sync-modal" class="modal-overlay">
     <div class="modal">

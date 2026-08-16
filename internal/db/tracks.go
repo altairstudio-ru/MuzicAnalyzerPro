@@ -9,6 +9,35 @@ import (
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/pkg/models"
 )
 
+const trackSelectCols = `id, title, artist, prompt, lyrics, tags, workspace,
+	duration, created_at, audio_path, audio_hash,
+	lyrics_path, is_downloaded, file_size,
+	upvote_count, play_count, is_liked, track_type, model_name`
+
+const trackSelectColsPrefixed = `t.id, t.title, t.artist, t.prompt, t.lyrics, t.tags, t.workspace,
+	t.duration, t.created_at, t.audio_path, t.audio_hash,
+	t.lyrics_path, t.is_downloaded, t.file_size,
+	t.upvote_count, t.play_count, t.is_liked, t.track_type, t.model_name`
+
+func scanTrack(scan func(dest ...any) error) (models.Track, error) {
+	t := models.Track{}
+	var tagsJSON string
+	var dl, liked int
+	err := scan(&t.ID, &t.Title, &t.Artist, &t.Prompt, &t.Lyrics,
+		&tagsJSON, &t.Workspace, &t.Duration, &t.CreatedAt,
+		&t.AudioPath, &t.AudioHash, &t.LyricsPath, &dl, &t.FileSize,
+		&t.UpvoteCount, &t.PlayCount, &liked, &t.TrackType, &t.ModelName)
+	if err != nil {
+		return t, err
+	}
+	t.IsDownloaded = dl == 1
+	t.IsLiked = liked == 1
+	if err := json.Unmarshal([]byte(tagsJSON), &t.Tags); err != nil {
+		t.Tags = []string{}
+	}
+	return t, nil
+}
+
 // UpsertTrack inserts or replaces a track in the database.
 func UpsertTrack(db *sql.DB, t *models.Track) error {
 	tagsJSON, err := json.Marshal(t.Tags)
@@ -20,12 +49,17 @@ func UpsertTrack(db *sql.DB, t *models.Track) error {
 	if t.IsDownloaded {
 		dl = 1
 	}
+	liked := 0
+	if t.IsLiked {
+		liked = 1
+	}
 
 	_, err = db.Exec(`
 		INSERT INTO tracks (id, title, artist, prompt, lyrics, tags, workspace,
 		                    duration, created_at, audio_path, audio_hash,
-		                    lyrics_path, is_downloaded, file_size)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                    lyrics_path, is_downloaded, file_size,
+		                    upvote_count, play_count, is_liked, track_type, model_name)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			title         = excluded.title,
 			artist        = excluded.artist,
@@ -40,10 +74,16 @@ func UpsertTrack(db *sql.DB, t *models.Track) error {
 			lyrics_path   = excluded.lyrics_path,
 			is_downloaded = excluded.is_downloaded,
 			file_size     = excluded.file_size,
+			upvote_count  = excluded.upvote_count,
+			play_count    = excluded.play_count,
+			is_liked      = excluded.is_liked,
+			track_type    = excluded.track_type,
+			model_name    = excluded.model_name,
 			updated_at    = datetime('now')`,
 		t.ID, t.Title, t.Artist, t.Prompt, t.Lyrics, string(tagsJSON),
 		t.Workspace, t.Duration, t.CreatedAt, t.AudioPath, t.AudioHash,
 		t.LyricsPath, dl, t.FileSize,
+		t.UpvoteCount, t.PlayCount, liked, t.TrackType, t.ModelName,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert track: %w", err)
@@ -53,31 +93,15 @@ func UpsertTrack(db *sql.DB, t *models.Track) error {
 
 // GetTrack retrieves a single track by its ID.
 func GetTrack(db *sql.DB, id string) (*models.Track, error) {
-	row := db.QueryRow(`
-		SELECT id, title, artist, prompt, lyrics, tags, workspace,
-		       duration, created_at, audio_path, audio_hash,
-		       lyrics_path, is_downloaded, file_size
-		FROM tracks WHERE id = ?`, id)
-
-	t := &models.Track{}
-	var tagsJSON string
-	var dl int
-	err := row.Scan(&t.ID, &t.Title, &t.Artist, &t.Prompt, &t.Lyrics,
-		&tagsJSON, &t.Workspace, &t.Duration, &t.CreatedAt,
-		&t.AudioPath, &t.AudioHash, &t.LyricsPath, &dl, &t.FileSize)
+	row := db.QueryRow(`SELECT `+trackSelectCols+` FROM tracks WHERE id = ?`, id)
+	t, err := scanTrack(row.Scan)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get track: %w", err)
 	}
-	t.IsDownloaded = dl == 1
-
-	if err := json.Unmarshal([]byte(tagsJSON), &t.Tags); err != nil {
-		t.Tags = []string{}
-	}
-
-	return t, nil
+	return &t, nil
 }
 
 // ListTracks returns tracks matching the given filter criteria.
@@ -105,6 +129,10 @@ func ListTracks(db *sql.DB, filter models.TrackFilter) ([]models.Track, error) {
 		conditions = append(conditions, "lb.name = ?")
 		args = append(args, filter.Label)
 	}
+	if filter.TrackType != "" {
+		conditions = append(conditions, "t.track_type = ?")
+		args = append(args, filter.TrackType)
+	}
 	if filter.Search != "" {
 		conditions = append(conditions,
 			"(t.title LIKE ? OR t.prompt LIKE ? OR t.lyrics LIKE ?)")
@@ -120,9 +148,7 @@ func ListTracks(db *sql.DB, filter models.TrackFilter) ([]models.Track, error) {
 		args = append(args, v)
 	}
 
-	query := "SELECT t.id, t.title, t.artist, t.prompt, t.lyrics, t.tags, t.workspace, " +
-		"t.duration, t.created_at, t.audio_path, t.audio_hash, " +
-		"t.lyrics_path, t.is_downloaded, t.file_size FROM tracks t" + joins
+	query := "SELECT " + trackSelectColsPrefixed + " FROM tracks t" + joins
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -145,18 +171,9 @@ func ListTracks(db *sql.DB, filter models.TrackFilter) ([]models.Track, error) {
 
 	var tracks []models.Track
 	for rows.Next() {
-		t := models.Track{}
-		var tagsJSON string
-		var dl int
-		if err := rows.Scan(&t.ID, &t.Title, &t.Artist, &t.Prompt,
-			&t.Lyrics, &tagsJSON, &t.Workspace, &t.Duration,
-			&t.CreatedAt, &t.AudioPath, &t.AudioHash,
-			&t.LyricsPath, &dl, &t.FileSize); err != nil {
+		t, err := scanTrack(rows.Scan)
+		if err != nil {
 			return nil, fmt.Errorf("scan track: %w", err)
-		}
-		t.IsDownloaded = dl == 1
-		if err := json.Unmarshal([]byte(tagsJSON), &t.Tags); err != nil {
-			t.Tags = []string{}
 		}
 		tracks = append(tracks, t)
 	}
@@ -168,9 +185,7 @@ func ListTracks(db *sql.DB, filter models.TrackFilter) ([]models.Track, error) {
 
 // GetAllTracks returns every track in the database.
 func GetAllTracks(db *sql.DB) ([]models.Track, error) {
-	rows, err := db.Query("SELECT id, title, artist, prompt, lyrics, tags, workspace, " +
-		"duration, created_at, audio_path, audio_hash, " +
-		"lyrics_path, is_downloaded, file_size FROM tracks")
+	rows, err := db.Query("SELECT " + trackSelectCols + " FROM tracks")
 	if err != nil {
 		return nil, fmt.Errorf("get all tracks: %w", err)
 	}
@@ -178,18 +193,9 @@ func GetAllTracks(db *sql.DB) ([]models.Track, error) {
 
 	var tracks []models.Track
 	for rows.Next() {
-		t := models.Track{}
-		var tagsJSON string
-		var dl int
-		if err := rows.Scan(&t.ID, &t.Title, &t.Artist, &t.Prompt,
-			&t.Lyrics, &tagsJSON, &t.Workspace, &t.Duration,
-			&t.CreatedAt, &t.AudioPath, &t.AudioHash,
-			&t.LyricsPath, &dl, &t.FileSize); err != nil {
+		t, err := scanTrack(rows.Scan)
+		if err != nil {
 			return nil, fmt.Errorf("scan track: %w", err)
-		}
-		t.IsDownloaded = dl == 1
-		if err := json.Unmarshal([]byte(tagsJSON), &t.Tags); err != nil {
-			t.Tags = []string{}
 		}
 		tracks = append(tracks, t)
 	}
