@@ -60,14 +60,14 @@ type pageData struct {
 	AnalysisResult *db.AnalysisResult
 
 	// Catalog UI extensions.
-	Albums       []models.Album
-	Labels       []models.Label
-	TrackAlbums  map[string][]models.Album
-	TrackLabels  map[string][]models.Label
-	Suggestions  []models.VariantSuggestion
-	Album        *models.AlbumWithTracks
-	VariantGroup *models.VariantGroupDetail
-	TrackGroups  []models.VariantGroup
+	Albums        []models.Album
+	Labels        []models.Label
+	TrackAlbums   map[string][]models.Album
+	TrackLabels   map[string][]models.Label
+	Suggestions   []models.VariantSuggestion
+	Album         *models.AlbumWithTracks
+	VariantGroup  *models.VariantGroupDetail
+	TrackGroups   []models.VariantGroup
 	HasDownloaded bool
 }
 
@@ -79,22 +79,35 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 	}
 	tmpl := template.Must(template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html"))
 
-	// Use absolute path for Python venv
-	venvPath, _ := filepath.Abs(".venv/bin/python3")
+	// Use absolute path for Python venv (overridable via config or env).
+	venvPath := mgr.Config.Suno.PythonBin
+	if venvPath == "" {
+		if env := os.Getenv("SUNO_PYTHON_BIN"); env != "" {
+			venvPath = env
+		} else {
+			venvPath, _ = filepath.Abs(".venv/bin/python3")
+		}
+	}
 	anz := analyzer.New(mgr.DB, venvPath)
 
 	// Scraper config (lazy init)
 	scraperCfg := scraper.DefaultScrapeConfig()
+	if cdp := mgr.Config.Suno.CDPEndpoint; cdp != "" {
+		scraperCfg.CDPEndpoint = cdp
+	}
+	if env := os.Getenv("SUNO_CDP_ENDPOINT"); env != "" {
+		scraperCfg.CDPEndpoint = env
+	}
 	scraperCfg.AuthToken = mgr.Config.Suno.AuthToken
 	scraperCfg.SessionCookie = mgr.Config.Suno.SessionCookie
 
 	s := &Server{
-		Router:     chi.NewRouter(),
-		Manager:    mgr,
-		DB:         mgr.DB,
-		Tmpl:       tmpl,
-		Analyzer:   anz,
-		scraperCfg: scraperCfg,
+		Router:       chi.NewRouter(),
+		Manager:      mgr,
+		DB:           mgr.DB,
+		Tmpl:         tmpl,
+		Analyzer:     anz,
+		scraperCfg:   scraperCfg,
 		compareState: map[string]*compareState{},
 	}
 

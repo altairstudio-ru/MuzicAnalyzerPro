@@ -37,6 +37,12 @@ type SunoConfig struct {
 	// default so existing on-disk structure is never touched. Can be overridden
 	// per-run with the --rename-files flag.
 	RenameOnSync bool `yaml:"rename_on_sync"`
+	// CDPEndpoint overrides the Chrome DevTools Protocol endpoint used by the
+	// lyrics scraper, e.g. "ws://127.0.0.1:9222". Empty keeps the default.
+	CDPEndpoint string `yaml:"cdp_endpoint"`
+	// PythonBin overrides the Python interpreter used for audio analysis,
+	// e.g. "/usr/bin/python3". Empty keeps the default ".venv/bin/python3".
+	PythonBin string `yaml:"python_bin"`
 }
 
 // LoadConfig loads configuration from the config file.
