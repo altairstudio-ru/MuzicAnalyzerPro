@@ -43,6 +43,18 @@ type TrackFilter struct {
 	Offset     int
 }
 
+// SyncOptions narrows a sync run to a subset of the Suno library.
+type SyncOptions struct {
+	// Limit stops the sync once that many tracks have been processed
+	// (0 = no limit). Applied in feed order, which is newest-first.
+	Limit int
+	// Newest is an alias for Limit that expresses intent: only the N newest
+	// tracks. Takes precedence over Limit when both are set.
+	Newest int
+	// Workspace restricts the sync to tracks from this workspace.
+	Workspace string
+}
+
 // SyncStats holds statistics from a sync operation.
 type SyncStats struct {
 	TotalTracks    int `json:"total_tracks"`

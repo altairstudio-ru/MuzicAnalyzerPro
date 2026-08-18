@@ -1,6 +1,10 @@
 package library
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/altairstudio-ru/MuzicAnalyzerPro/pkg/models"
+)
 
 func TestStopSyncSetsCanceled(t *testing.T) {
 	m, err := NewManager(&Config{
@@ -104,4 +108,25 @@ func TestSyncStatusWaitingAuthPassthrough(t *testing.T) {
 		t.Errorf("WaitingAuth not reset by beginSync")
 	}
 	m.finishSync()
+}
+
+func TestSyncLimitResolution(t *testing.T) {
+	cases := []struct {
+		name string
+		opts *models.SyncOptions
+		want int
+	}{
+		{"nil opts means no limit", nil, 0},
+		{"limit set", &models.SyncOptions{Limit: 10}, 10},
+		{"newest set", &models.SyncOptions{Newest: 7}, 7},
+		{"newest beats limit", &models.SyncOptions{Limit: 10, Newest: 7}, 7},
+		{"both zero means no limit", &models.SyncOptions{}, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := syncLimit(tc.opts); got != tc.want {
+				t.Errorf("syncLimit(%+v) = %d, want %d", tc.opts, got, tc.want)
+			}
+		})
+	}
 }

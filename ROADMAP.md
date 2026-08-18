@@ -95,10 +95,10 @@
 - [ ] Привязка по времени (timestamps) если есть в Suno API (LRC)
 - [x] Кнопка скачивания lyrics в WebUI
 
-### Selective Sync
-- [ ] `suno-archiver sync --limit 10` — скачать только N последних треков
-- [ ] `suno-archiver sync --newest 10` — только самые новые
-- [ ] `suno-archiver sync --workspace "name"` — только указанный workspace
+### Selective Sync ✅
+- [x] `suno-archiver sync --limit 10` — скачать только N последних треков
+- [x] `suno-archiver sync --newest 10` — только самые новые
+- [x] `suno-archiver sync --workspace "name"` — только указанный workspace
 - [ ] Интерактивный режим: показать список, выбрать треки для скачивания
 
 ### WebUI Improvements
@@ -121,6 +121,14 @@
 ---
 
 ## Changelog
+
+### 2026-08-18 — v0.6.0
+- Selective Sync: `sync --limit N`, `sync --newest N`, `sync --workspace NAME` (feed is newest-first); full sync unchanged when no flags passed
+
+### 2026-08-17 — v0.5.0
+- Align Go toolchain to 1.26 across go.mod, GitHub Actions and Dockerfile; restore `go vet`/`go build ./...` gates and the GHCR docker deploy job
+- Make CDP endpoint and Python bin configurable via `config.yaml` (`cdp_endpoint`, `python_bin`) and env (`SUNO_CDP_ENDPOINT`, `SUNO_PYTHON_BIN`) so the Docker image can run scraping and analysis
+- Docker image now bundles the Python analyzer (python3 + requirements + ffmpeg), `.dockerignore` excludes lightpanda/.venv/.git
 
 ### 2026-08-16 — v0.4.0
 - Persist Suno likes, play counts, liked flag, track_type and model_name; badges + track_type filter in Web UI

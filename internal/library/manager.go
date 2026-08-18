@@ -204,13 +204,14 @@ func (m *Manager) SetAuthToken(token string) {
 	m.bumpTokenGen()
 }
 
-// Sync performs a full sync: fetch all tracks from Suno, update DB, download audio.
-func (m *Manager) Sync() (*models.SyncStats, error) {
+// Sync performs a sync: fetch tracks from Suno (optionally filtered via opts),
+// update DB, download audio. Passing opts=nil performs a full sync.
+func (m *Manager) Sync(opts *models.SyncOptions) (*models.SyncStats, error) {
 	if !m.beginSync() {
 		return nil, errors.New("sync already in progress")
 	}
 	defer m.finishSync()
-	return m.syncOnce()
+	return m.syncOnce(opts)
 }
 
 // TrySyncBackground atomically reserves the sync slot and runs the sync in a
@@ -222,21 +223,39 @@ func (m *Manager) TrySyncBackground() bool {
 	}
 	go func() {
 		defer m.finishSync()
-		if _, err := m.syncOnce(); err != nil {
+		if _, err := m.syncOnce(nil); err != nil {
 			log.Printf("Sync error: %v", err)
 		}
 	}()
 	return true
 }
 
+// syncLimit resolves the effective track limit from sync options. Newest
+// expresses intent over Limit when both are set; 0 means "no limit".
+func syncLimit(opts *models.SyncOptions) int {
+	if opts == nil {
+		return 0
+	}
+	switch {
+	case opts.Newest > 0:
+		return opts.Newest
+	case opts.Limit > 0:
+		return opts.Limit
+	}
+	return 0
+}
+
 // syncOnce runs a single sync pass. The caller must have reserved the slot via
-// beginSync (or TrySyncBackground).
-func (m *Manager) syncOnce() (*models.SyncStats, error) {
+// beginSync (or TrySyncBackground). opts narrows the set of processed tracks.
+func (m *Manager) syncOnce(opts *models.SyncOptions) (*models.SyncStats, error) {
 	stats := &models.SyncStats{}
 
 	pageSize := 50
 	cursor := ""
 	workspaceSet := make(map[string]bool)
+
+	limit := syncLimit(opts)
+	processed := 0
 	// A Suno session cookie is short-lived (about one hour), and a full sync
 	// can outlive it. When the API starts returning 401 mid-run we pause and
 	// wait for the user to refresh the token via the Chrome extension; the
@@ -305,6 +324,15 @@ func (m *Manager) syncOnce() (*models.SyncStats, error) {
 
 		for _, track := range resp.Tracks {
 			isNew := false
+
+			// Selective sync: restrict to opts.Workspace, and stop after
+			// opts.Limit/opts.Newest tracks have been processed.
+			if opts != nil && opts.Workspace != "" && track.Workspace != opts.Workspace {
+				continue
+			}
+			if limit > 0 && processed >= limit {
+				break
+			}
 
 			m.updateSync(func(s *SyncStatus) {
 				s.Phase = PhaseFetch
@@ -385,6 +413,7 @@ func (m *Manager) syncOnce() (*models.SyncStats, error) {
 			}
 
 			stats.TotalTracks++
+			processed++
 
 			if isNew {
 				stats.NewTracks++
@@ -398,6 +427,10 @@ func (m *Manager) syncOnce() (*models.SyncStats, error) {
 				s.Downloaded = stats.Downloaded
 				s.Errors = stats.Errors
 			})
+		}
+
+		if limit > 0 && processed >= limit {
+			break
 		}
 
 		if !resp.HasMore || len(resp.Tracks) == 0 {

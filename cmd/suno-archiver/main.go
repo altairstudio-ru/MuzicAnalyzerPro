@@ -8,6 +8,7 @@ import (
 
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/library"
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/web"
+	"github.com/altairstudio-ru/MuzicAnalyzerPro/pkg/models"
 )
 
 var version = "dev"
@@ -57,8 +58,14 @@ To get the token:
 	syncCmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Sync tracks from Suno to local library",
-		Long: `Fetch all tracks from your Suno account, download audio files,
+		Long: `Fetch tracks from your Suno account, download audio files,
 and store everything in the local library.
+
+By default syncs the whole library. Use flags to narrow it down:
+
+  --limit N        stop after processing N tracks (feed is newest-first)
+  --newest N       alias for --limit expressing intent: only the N newest tracks
+  --workspace NAME only process tracks from the given workspace
 
 Use --rename-files to also move/rename downloaded audio (and lyrics .txt)
 files when a track's title or workspace changed in Suno. Off by default;
@@ -81,8 +88,17 @@ can be enabled permanently with rename_on_sync in config.yaml.`,
 				mgr.RenameOnSync = cfg.Suno.RenameOnSync
 			}
 
+			opts := &models.SyncOptions{}
+			if v, _ := cmd.Flags().GetInt("limit"); v > 0 {
+				opts.Limit = v
+			}
+			if v, _ := cmd.Flags().GetInt("newest"); v > 0 {
+				opts.Newest = v
+			}
+			opts.Workspace, _ = cmd.Flags().GetString("workspace")
+
 			fmt.Println("🔄 Syncing tracks from Suno...")
-			stats, err := mgr.Sync()
+			stats, err := mgr.Sync(opts)
 			if err != nil {
 				return fmt.Errorf("sync: %w", err)
 			}
@@ -100,6 +116,9 @@ can be enabled permanently with rename_on_sync in config.yaml.`,
 		},
 	}
 	syncCmd.Flags().Bool("rename-files", false, "Rename/move audio files when title or workspace changed in Suno")
+	syncCmd.Flags().Int("limit", 0, "Stop after processing N tracks (feed is newest-first)")
+	syncCmd.Flags().Int("newest", 0, "Only process the N newest tracks (alias for --limit)")
+	syncCmd.Flags().String("workspace", "", "Only process tracks from the given workspace")
 
 	serveCmd := &cobra.Command{
 		Use:   "serve",
