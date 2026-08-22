@@ -92,4 +92,31 @@ CREATE TABLE IF NOT EXISTS variant_group_tracks (
     PRIMARY KEY (group_id, track_id)
 );
 CREATE INDEX IF NOT EXISTS idx_variant_group_tracks_track ON variant_group_tracks(track_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
+    title, prompt, lyrics,
+    content='tracks', content_rowid='rowid',
+    tokenize='unicode61 remove_diacritics 2'
+);
+
+CREATE TRIGGER IF NOT EXISTS tracks_fts_ai AFTER INSERT ON tracks BEGIN
+    INSERT INTO tracks_fts(rowid, title, prompt, lyrics)
+    VALUES (new.rowid, new.title, new.prompt, new.lyrics);
+END;
+
+CREATE TRIGGER IF NOT EXISTS tracks_fts_ad AFTER DELETE ON tracks BEGIN
+    INSERT INTO tracks_fts(tracks_fts, rowid, title, prompt, lyrics)
+    VALUES ('delete', old.rowid, old.title, old.prompt, old.lyrics);
+END;
+
+CREATE TRIGGER IF NOT EXISTS tracks_fts_au AFTER UPDATE ON tracks BEGIN
+    INSERT INTO tracks_fts(tracks_fts, rowid, title, prompt, lyrics)
+    VALUES ('delete', old.rowid, old.title, old.prompt, old.lyrics);
+    INSERT INTO tracks_fts(rowid, title, prompt, lyrics)
+    VALUES (new.rowid, new.title, new.prompt, new.lyrics);
+END;
+
+INSERT INTO tracks_fts(rowid, title, prompt, lyrics)
+    SELECT rowid, title, prompt, lyrics FROM tracks
+    WHERE rowid NOT IN (SELECT rowid FROM tracks_fts);
 `

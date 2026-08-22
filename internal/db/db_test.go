@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
 	"testing"
 
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/pkg/models"
@@ -154,6 +155,132 @@ func ids(tracks []models.Track) []string {
 	var out []string
 	for _, t := range tracks {
 		out = append(out, t.ID)
+	}
+	return out
+}
+
+func TestFTSSearch(t *testing.T) {
+	db := newTestDB(t)
+	defer db.Close()
+
+	tracks := []*models.Track{
+		{ID: "t1", Title: "Ночь", Prompt: "эмоциональная поп песня", Lyrics: "Ночь за окном, я лечу к тебе снова", Tags: []string{}, CreatedAt: "2024-01-01"},
+		{ID: "t2", Title: "Night Drive", Prompt: "synthwave instrumental", Lyrics: "driving through neon lights tonight", Tags: []string{}, CreatedAt: "2024-01-02"},
+		{ID: "t3", Title: "Дорога", Prompt: "рок баллада", Lyrics: "За окном дорога, фары режут ночь", Tags: []string{}, CreatedAt: "2024-01-03"},
+	}
+	for _, tr := range tracks {
+		if err := UpsertTrack(db, tr); err != nil {
+			t.Fatalf("UpsertTrack(%s): %v", tr.ID, err)
+		}
+	}
+
+	cases := []struct {
+		name   string
+		search string
+		want   []string
+	}{
+		{"cyrillic prefix in lyrics", "ночь", []string{"t1", "t3"}},
+		{"two tokens AND", "лечу окном", []string{"t1"}},
+		{"latin word", "neon", []string{"t2"}},
+		{"phrase token pair", "neon lights", []string{"t2"}},
+		{"prompt field", "synthwave", []string{"t2"}},
+		{"title match", "Дорога", []string{"t3"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ListTracks(db, models.TrackFilter{Search: tc.search})
+			if err != nil {
+				t.Fatalf("ListTracks(search=%q): %v", tc.search, err)
+			}
+			if diff := equalIDs(ids(got), tc.want); diff != "" {
+				t.Errorf("ListTracks(search=%q) ids mismatch:\n%s", tc.search, diff)
+			}
+		})
+	}
+}
+
+func TestFTSSearchSyncOnUpdateAndDelete(t *testing.T) {
+	db := newTestDB(t)
+	defer db.Close()
+
+	tr := &models.Track{ID: "u1", Title: "Old Title", Lyrics: "original words here", Tags: []string{}}
+	if err := UpsertTrack(db, tr); err != nil {
+		t.Fatal(err)
+	}
+
+	tr.Lyrics = "полная переработка текста песни"
+	if err := UpsertTrack(db, tr); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ListTracks(db, models.TrackFilter{Search: "переработка"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != "u1" {
+		t.Errorf("after update, search 'переработка' = %v, want [u1]", ids(got))
+	}
+	got, err = ListTracks(db, models.TrackFilter{Search: "original"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("stale FTS hit after update: %v", ids(got))
+	}
+
+	if err := DeleteTrack(db, "u1"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = ListTracks(db, models.TrackFilter{Search: "песни"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("deleted track still searchable via FTS: %v", ids(got))
+	}
+}
+
+func TestFTSQuerySanitization(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"hello world", `"hello"* AND "world"*`},
+		{"  foo   bar  ", `"foo"* AND "bar"*`},
+		{"не-;query!! (спец)", `"не"* AND "query"* AND "спец"*`},
+		{"!!! *** ---", ""},
+		{"", ""},
+		{"привет123", `"привет123"*`},
+	}
+	for _, tc := range cases {
+		if got := ftsQuery(tc.in); got != tc.want {
+			t.Errorf("ftsQuery(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func equalIDs(got, want []string) string {
+	set := map[string]bool{}
+	for _, id := range want {
+		set[id] = true
+	}
+	var extra []string
+	for _, id := range got {
+		if set[id] {
+			delete(set, id)
+		} else {
+			extra = append(extra, id)
+		}
+	}
+	if len(set) == 0 && len(extra) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("got %v, want %v (extra %v, missing %v)", got, want, extra, keysOf(set))
+}
+
+func keysOf(m map[string]bool) []string {
+	var out []string
+	for k := range m {
+		out = append(out, k)
 	}
 	return out
 }

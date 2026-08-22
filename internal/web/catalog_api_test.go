@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/db"
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/library"
@@ -204,4 +205,57 @@ func TestCatalogAPIFlow(t *testing.T) {
 
 	mustAPI(t, http.MethodDelete, ts.URL+"/api/variant-groups/"+groupID+"/tracks/trk-a", nil)
 	mustAPI(t, http.MethodDelete, ts.URL+"/api/variant-groups/"+groupID, nil)
+}
+
+func TestBulkAnalyzeEndpoint(t *testing.T) {
+	ts, database := newTestServer(t)
+
+	if err := db.UpsertTrack(database, &models.Track{ID: "ba-ok", Title: "Ok", IsDownloaded: true, Tags: []string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertTrack(database, &models.Track{ID: "ba-nodl", Title: "NotDownloaded", IsDownloaded: false, Tags: []string{}}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := mustAPI(t, http.MethodPost, ts.URL+"/analyze/bulk", map[string]any{
+		"track_ids": []string{"ba-ok", "ba-nodl", "ba-missing"},
+	})
+	q, ok := obj(resp)["queued"].(float64)
+	if !ok || int(q) != 1 {
+		t.Fatalf("queued = %v, want 1 (only downloaded track)", obj(resp)["queued"])
+	}
+
+	if code := postStatus(t, ts.URL+"/analyze/bulk", map[string]any{"track_ids": []string{"ba-missing"}}); code != http.StatusBadRequest {
+		t.Errorf("bulk analyze with no valid tracks: status = %d, want %d", code, http.StatusBadRequest)
+	}
+	if code := postStatus(t, ts.URL+"/analyze/bulk", map[string]any{}); code != http.StatusBadRequest {
+		t.Errorf("bulk analyze without ids: status = %d, want %d", code, http.StatusBadRequest)
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		res, err := db.GetAnalysisResult(database, "ba-ok")
+		if err == nil && res != nil && res.Status != "pending" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	res, err := db.GetAnalysisResult(database, "ba-ok")
+	if err != nil || res == nil {
+		t.Fatal("no analysis result for bulk-analyzed track")
+	}
+	if res.Status == "pending" {
+		t.Error("analysis still pending after 10s (python may be missing in test env)")
+	}
+}
+
+func postStatus(t *testing.T, url string, body any) int {
+	t.Helper()
+	b, _ := json.Marshal(body)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(b))
+	if err != nil {
+		t.Fatalf("POST %s: %v", url, err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode
 }

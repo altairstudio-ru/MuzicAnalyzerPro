@@ -92,19 +92,19 @@
 
 ### Lyrics Export ✅
 - [x] Скачивать тексты песен как `.txt` рядом с аудиофайлом
-- [ ] Привязка по времени (timestamps) если есть в Suno API (LRC)
+- [ ] Привязка по времени (timestamps/LRC) — недоступно: Suno v3 API не отдаёт таймкоды (проверено 2026-08)
 - [x] Кнопка скачивания lyrics в WebUI
 
 ### Selective Sync ✅
 - [x] `suno-archiver sync --limit 10` — скачать только N последних треков
 - [x] `suno-archiver sync --newest 10` — только самые новые
 - [x] `suno-archiver sync --workspace "name"` — только указанный workspace
-- [ ] Интерактивный режим: показать список, выбрать треки для скачивания
+- [x] Интерактивный режим: `sync --interactive` — TUI-список (bubbletea), мультивыбор, синхронизация выбранного
 
 ### WebUI Improvements
 - [x] Кнопка копирования для промпта (стиля) и текста песни
-- [ ] Поиск по текстам песен (full-text search)
-- [ ] Bulk-действия: выделить несколько треков → анализ / скачивание / удаление
+- [x] Поиск по текстам песен (full-text search) — SQLite FTS5 (unicode61), префиксный поиск, триггеры синхронизации индекса
+- [x] Bulk-действия: выделить несколько треков → анализ / добавление в сборник / метки
 - [ ] Тёмная тема (уже есть) + настройка акцентного цвета
 
 ---
@@ -121,6 +121,12 @@
 ---
 
 ## Changelog
+
+### 2026-08-22 — v0.8.0
+- Full-text search: SQLite FTS5 index over title/prompt/lyrics (unicode61, Cyrillic-friendly), prefix matching, auto-synced via triggers; replaces LIKE search
+- Bulk analyze: checkbox selection → sequential background analysis via `POST /analyze/bulk` (no parallel python processes)
+- Interactive sync: `sync --interactive` — bubbletea TUI multi-select of the newest feed tracks, sync only the picked IDs
+- LRC timestamps confirmed unavailable in Suno v3 API
 
 ### 2026-08-22 — v0.7.0
 - Hook & Structure Analysis: new `structure` metric — section detection (intro/verse/chorus/bridge/outro), hook strength score, retention curve, energy envelope; timeline + sparklines in track detail UI

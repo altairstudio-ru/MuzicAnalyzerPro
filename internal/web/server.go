@@ -128,6 +128,7 @@ func NewServer(mgr *library.Manager) (*Server, error) {
 	s.Router.Options("/api/auth", s.authCORS)
 	s.Router.Get("/api/health", s.healthHandler)
 	s.Router.Post("/analyze/{id}", s.triggerAnalyze)
+	s.Router.Post("/analyze/bulk", s.triggerBulkAnalyze)
 	s.Router.Get("/analyze/{id}/status", s.analyzeStatus)
 	s.Router.Post("/compare/upload/{id}", s.compareUpload)
 	s.Router.Post("/compare/select/{id}", s.compareSelect)
@@ -527,6 +528,53 @@ func (s *Server) triggerAnalyze(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("HX-Redirect", "/tracks/"+id)
 	w.WriteHeader(http.StatusOK)
+}
+
+// bulkAnalyzeItem pairs a track with what the analyzer needs from it.
+type bulkAnalyzeItem struct {
+	ID        string
+	AudioPath string
+	Lyrics    string
+}
+
+// triggerBulkAnalyze queues sequential background analysis for the given
+// tracks. Only downloaded tracks are accepted; everything runs in one
+// goroutine so we never spawn parallel python/whisper processes.
+func (s *Server) triggerBulkAnalyze(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		TrackIDs []string `json:"track_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.TrackIDs) == 0 {
+		http.Error(w, "track_ids required", http.StatusBadRequest)
+		return
+	}
+	var items []bulkAnalyzeItem
+	for _, id := range req.TrackIDs {
+		track, err := db.GetTrack(s.DB, id)
+		if err != nil || track == nil || !track.IsDownloaded {
+			continue
+		}
+		items = append(items, bulkAnalyzeItem{ID: id, AudioPath: track.AudioPath, Lyrics: track.Lyrics})
+	}
+	if len(items) == 0 {
+		http.Error(w, "no downloadable tracks to analyze", http.StatusBadRequest)
+		return
+	}
+	go func() {
+		for _, it := range items {
+			_ = db.UpsertAnalysisResult(s.DB, &db.AnalysisResult{
+				TrackID:    it.ID,
+				Version:    1,
+				Status:     "pending",
+				ResultJSON: "{}",
+			})
+			if _, err := s.Analyzer.Analyze(it.ID, it.AudioPath, []string{"all"}, it.Lyrics); err != nil {
+				log.Printf("[analyzer] bulk analyze track %s: %v", it.ID, err)
+			}
+		}
+	}()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{"queued": len(items)})
 }
 
 // analyzeStatus returns the analysis result JSON for a track.

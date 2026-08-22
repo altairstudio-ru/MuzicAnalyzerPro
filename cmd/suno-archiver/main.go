@@ -3,10 +3,13 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/db"
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/library"
+	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/tui"
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/internal/web"
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/pkg/models"
 )
@@ -97,6 +100,21 @@ can be enabled permanently with rename_on_sync in config.yaml.`,
 			}
 			opts.Workspace, _ = cmd.Flags().GetString("workspace")
 
+			interactive, _ := cmd.Flags().GetBool("interactive")
+			if interactive {
+				ids, err := pickTracksInteractively(mgr)
+				if err != nil {
+					return err
+				}
+				if len(ids) == 0 {
+					fmt.Println("Отменено — не выбрано ни одного трека.")
+					return nil
+				}
+				opts = &models.SyncOptions{IDs: ids}
+			} else if opts.Limit == 0 && opts.Newest == 0 && opts.Workspace == "" {
+				opts = nil
+			}
+
 			fmt.Println("🔄 Syncing tracks from Suno...")
 			stats, err := mgr.Sync(opts)
 			if err != nil {
@@ -119,6 +137,7 @@ can be enabled permanently with rename_on_sync in config.yaml.`,
 	syncCmd.Flags().Int("limit", 0, "Stop after processing N tracks (feed is newest-first)")
 	syncCmd.Flags().Int("newest", 0, "Only process the N newest tracks (alias for --limit)")
 	syncCmd.Flags().String("workspace", "", "Only process tracks from the given workspace")
+	syncCmd.Flags().Bool("interactive", false, "Browse the newest feed tracks in a TUI and sync only the selected ones")
 
 	serveCmd := &cobra.Command{
 		Use:   "serve",
@@ -321,4 +340,42 @@ are rewritten unless --overwrite is set.`,
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// pickTracksInteractively loads the newest feed tracks and lets the user
+// multi-select which ones to sync. Returns an empty slice when cancelled.
+func pickTracksInteractively(mgr *library.Manager) ([]string, error) {
+	fmt.Println("🔄 Загружаю ленту Suno (до 200 последних треков)…")
+	tracks, err := mgr.FetchFeedPreview(200)
+	if err != nil {
+		return nil, fmt.Errorf("fetch feed: %w", err)
+	}
+	items := make([]tui.TrackItem, len(tracks))
+	for i, tr := range tracks {
+		downloaded := false
+		if existing, err := db.GetTrack(mgr.DB, tr.ID); err == nil && existing != nil {
+			downloaded = existing.IsDownloaded
+		}
+		items[i] = tui.TrackItem{
+			ID:         tr.ID,
+			Title:      tr.Title,
+			Workspace:  tr.Workspace,
+			CreatedAt:  shortDate(tr.CreatedAt),
+			Downloaded: downloaded,
+		}
+	}
+	ids, err := tui.SelectTracks(items)
+	if err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+func shortDate(s string) string {
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05Z", "2006-01-02 15:04:05"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.Format("02.01.06 15:04")
+		}
+	}
+	return s
 }

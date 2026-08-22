@@ -107,6 +107,7 @@
                 <input id="bulk-label-new" placeholder="или новая метка" size="14">
                 <button class="btn btn-copy" onclick="bulkToLabel()" title="Пометить выбранные">➜</button>
             </span>
+            <button class="btn btn-copy" onclick="bulkAnalyze(this)" title="Запустить анализ выбранных (последовательно)">🧠 Анализ</button>
             <button class="btn btn-copy" onclick="bulkReset()">✕</button>
         </div>
 
@@ -315,6 +316,24 @@
     function bulkReset() {
         document.querySelectorAll('.track-check:checked').forEach(c => c.checked = false);
         updateBulk();
+    }
+    async function bulkAnalyze(btn) {
+        const ids = checkedTrackIDs();
+        if (!ids.length) return;
+        const old = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '…';
+        try {
+            const r = await posting('/analyze/bulk', { track_ids: ids });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+            btn.textContent = '✓ ' + j.queued;
+            setTimeout(() => { location.reload(); }, 800);
+        } catch (e) {
+            alert('Ошибка: ' + e.message);
+            btn.disabled = false;
+            btn.textContent = old;
+        }
     }
     async function bulkToAlbum() {
         let albumID = document.getElementById('bulk-album').value;

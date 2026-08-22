@@ -53,6 +53,9 @@ type SyncOptions struct {
 	Newest int
 	// Workspace restricts the sync to tracks from this workspace.
 	Workspace string
+	// IDs restricts the sync to exactly these track IDs (interactive mode).
+	// When set, Limit/Newest/Workspace are ignored.
+	IDs []string
 }
 
 // SyncStats holds statistics from a sync operation.

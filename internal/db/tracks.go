@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/altairstudio-ru/MuzicAnalyzerPro/pkg/models"
 )
@@ -104,6 +105,29 @@ func GetTrack(db *sql.DB, id string) (*models.Track, error) {
 	return &t, nil
 }
 
+// ftsQuery converts a raw user search string into a safe FTS5 prefix query.
+// Tokens are runs of unicode letters/digits (any other character splits), each
+// gets a prefix star, tokens are ANDed. Returns "" when nothing usable remains.
+func ftsQuery(search string) string {
+	var out []string
+	var b strings.Builder
+	flush := func() {
+		if b.Len() > 0 {
+			out = append(out, `"`+b.String()+`"*`)
+			b.Reset()
+		}
+	}
+	for _, r := range search {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		} else {
+			flush()
+		}
+	}
+	flush()
+	return strings.Join(out, " AND ")
+}
+
 // ListTracks returns tracks matching the given filter criteria.
 func ListTracks(db *sql.DB, filter models.TrackFilter) ([]models.Track, error) {
 	var conditions []string
@@ -134,10 +158,16 @@ func ListTracks(db *sql.DB, filter models.TrackFilter) ([]models.Track, error) {
 		args = append(args, filter.TrackType)
 	}
 	if filter.Search != "" {
-		conditions = append(conditions,
-			"(t.title LIKE ? OR t.prompt LIKE ? OR t.lyrics LIKE ?)")
-		s := "%" + filter.Search + "%"
-		args = append(args, s, s, s)
+		if q := ftsQuery(filter.Search); q != "" {
+			joins += " JOIN tracks_fts ON tracks_fts.rowid = t.rowid"
+			conditions = append(conditions, "tracks_fts MATCH ?")
+			args = append(args, q)
+		} else {
+			conditions = append(conditions,
+				"(t.title LIKE ? OR t.prompt LIKE ? OR t.lyrics LIKE ?)")
+			s := "%" + filter.Search + "%"
+			args = append(args, s, s, s)
+		}
 	}
 	if filter.Downloaded != nil {
 		v := 0

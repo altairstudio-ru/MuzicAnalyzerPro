@@ -230,10 +230,36 @@ func (m *Manager) TrySyncBackground() bool {
 	return true
 }
 
+// FetchFeedPreview downloads up to max newest tracks from the feed without
+// syncing anything to the database. Used by interactive sync.
+func (m *Manager) FetchFeedPreview(max int) ([]models.Track, error) {
+	if max <= 0 {
+		max = 100
+	}
+	var out []models.Track
+	cursor := ""
+	for len(out) < max {
+		resp, err := m.Suno.FetchTracks(cursor, 200)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, resp.Tracks...)
+		if !resp.HasMore || len(resp.Tracks) == 0 {
+			break
+		}
+		cursor = resp.Next
+	}
+	if len(out) > max {
+		out = out[:max]
+	}
+	return out, nil
+}
+
 // syncLimit resolves the effective track limit from sync options. Newest
-// expresses intent over Limit when both are set; 0 means "no limit".
+// expresses intent over Limit when both are set; 0 means "no limit". An ID
+// set (interactive mode) disables the limit entirely.
 func syncLimit(opts *models.SyncOptions) int {
-	if opts == nil {
+	if opts == nil || len(opts.IDs) > 0 {
 		return 0
 	}
 	switch {
@@ -256,6 +282,15 @@ func (m *Manager) syncOnce(opts *models.SyncOptions) (*models.SyncStats, error) 
 
 	limit := syncLimit(opts)
 	processed := 0
+
+	var idSet map[string]bool
+	seen := map[string]bool{}
+	if opts != nil && len(opts.IDs) > 0 {
+		idSet = make(map[string]bool, len(opts.IDs))
+		for _, id := range opts.IDs {
+			idSet[id] = true
+		}
+	}
 	// A Suno session cookie is short-lived (about one hour), and a full sync
 	// can outlive it. When the API starts returning 401 mid-run we pause and
 	// wait for the user to refresh the token via the Chrome extension; the
@@ -326,7 +361,14 @@ func (m *Manager) syncOnce(opts *models.SyncOptions) (*models.SyncStats, error) 
 			isNew := false
 
 			// Selective sync: restrict to opts.Workspace, and stop after
-			// opts.Limit/opts.Newest tracks have been processed.
+			// opts.Limit/opts.Newest tracks have been processed. opts.IDs
+			// (interactive mode) overrides both.
+			if idSet != nil && !idSet[track.ID] {
+				continue
+			}
+			if idSet != nil {
+				seen[track.ID] = true
+			}
 			if opts != nil && opts.Workspace != "" && track.Workspace != opts.Workspace {
 				continue
 			}
@@ -427,6 +469,10 @@ func (m *Manager) syncOnce(opts *models.SyncOptions) (*models.SyncStats, error) 
 				s.Downloaded = stats.Downloaded
 				s.Errors = stats.Errors
 			})
+		}
+
+		if idSet != nil && len(seen) == len(idSet) {
+			break
 		}
 
 		if limit > 0 && processed >= limit {
