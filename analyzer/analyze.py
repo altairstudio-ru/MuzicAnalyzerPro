@@ -18,7 +18,7 @@ import sys
 import time
 
 from utils.audio import load_audio
-from metrics import loudness, phase, temporal, spectral, translation, streaming
+from metrics import loudness, phase, temporal, spectral, translation, streaming, structure
 from ai import whisper, recommendations
 
 METRICS = {
@@ -27,6 +27,7 @@ METRICS = {
     "temporal": temporal,
     "spectral": spectral,
     "translation": translation,
+    "structure": structure,
 }
 
 AI_METRICS = {

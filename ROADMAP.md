@@ -50,11 +50,11 @@
 - [x] «Сравнить варианты»: быстрый анализ (только аудио-метрики, без whisper) по членам группы → ранжированная таблица (overall_score, mix_quality, critical_issues, LUFS, DR) → «Сделать лучшим»
 - [x] Авто-подсказка: панель «Возможные варианты» по одинаковому названию → создание группы вариантов одним кликом
 
-### Hook & Structure Analysis
-- [ ] Section detection (intro, verse, chorus, bridge, outro)
-- [ ] Hook strength scoring
-- [ ] Retention curve (listener attention over time)
-- [ ] Energy envelope visualization
+### Hook & Structure Analysis ✅
+- [x] Section detection (intro, verse, chorus, bridge, outro) — beat-synced MFCC+chroma, агломеративная сегментация + эвристические ярлыки
+- [x] Hook strength scoring — рекуррентность хоруса, повторяемость, отличимость → 0–10
+- [x] Retention curve (listener attention over time) — 100 точек
+- [x] Energy envelope visualization — SVG-спарклайны в карточке трека
 
 ### Audio Visualizations
 - [ ] Spectrogram rendering (PNG from Python → served by Go)
@@ -121,6 +121,9 @@
 ---
 
 ## Changelog
+
+### 2026-08-22 — v0.7.0
+- Hook & Structure Analysis: new `structure` metric — section detection (intro/verse/chorus/bridge/outro), hook strength score, retention curve, energy envelope; timeline + sparklines in track detail UI
 
 ### 2026-08-18 — v0.6.0
 - Selective Sync: `sync --limit N`, `sync --newest N`, `sync --workspace NAME` (feed is newest-first); full sync unchanged when no flags passed
