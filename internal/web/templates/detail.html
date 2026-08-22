@@ -84,63 +84,9 @@ function toggleRefPanel() {
 
             if (ref.error) {
                 html += '<div style="color:#f0615f;font-size:13px;">' + escapeHtml(ref.error) + '</div>';
-            html += '</div>';
-            return html;
-        }
-        function renderStructure(v) {
-            const colors = {intro:'#7aa2f7', verse:'#e5b567', chorus:'#6ee7a0', bridge:'#c792ea', outro:'#8f8a83', section:'#8f8a83', full:'#8f8a83'};
-            let h = '';
-            if (typeof v.hook_score === 'number') {
-                const pct = Math.min(100, Math.max(0, v.hook_score * 10));
-                const color = pct >= 70 ? '#6ee7a0' : pct >= 40 ? '#e5b567' : '#f0615f';
-                h += '<div class="metric-row"><span class="metric-label">hook score</span>';
-                h += '<div class="metric-bar-bg"><div class="metric-bar" style="width:' + pct + '%;background:' + color + '"></div></div>';
-                h += '<span class="metric-val" style="color:' + color + '">' + v.hook_score + '</span></div>';
+                html += '</div>';
+                return html;
             }
-            if (v.hook_details && typeof v.hook_details === 'object') {
-                const d = v.hook_details;
-                h += '<div style="margin:4px 0 10px 8px;font-size:11px;color:#8f8a83">';
-                h += '<span>хорус ×' + (d.chorus_recurrence || 0) + '</span> · ';
-                h += '<span>повторяемость ' + Math.round((d.repetition_ratio || 0) * 100) + '%</span> · ';
-                h += '<span>отличимость ' + Math.round((d.distinctiveness || 0) * 100) + '%</span></div>';
-            }
-            const secs = Array.isArray(v.sections) ? v.sections : [];
-            if (secs.length > 0) {
-                const total = Math.max(secs[secs.length - 1].end - secs[0].start, 0.01);
-                h += '<div style="display:flex;height:22px;border-radius:4px;overflow:hidden;margin:6px 0 4px 8px;">';
-                for (const s of secs) {
-                    const w = Math.max((s.end - s.start) / total * 100, 1);
-                    const c = colors[s.label] || '#8f8a83';
-                    h += '<div title="' + escapeHtml(s.label) + ' ' + fmtTime(s.start) + '–' + fmtTime(s.end) + '" style="width:' + w + '%;background:' + c + ';opacity:.75;border-right:1px solid #0b0b10;"></div>';
-                }
-                h += '</div>';
-                const present = [...new Set(secs.map(s => s.label))];
-                h += '<div style="margin:0 0 12px 8px;display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:#8f8a83">';
-                for (const lab of present) {
-                    h += '<span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + (colors[lab] || '#8f8a83') + ';margin-right:4px;"></span>' + escapeHtml(lab) + '</span>';
-                }
-                h += '</div>';
-            }
-            h += sparklineBlock('retention curve', v.retention_curve, '#7aa2f7');
-            h += sparklineBlock('energy envelope', v.energy_envelope, '#6ee7a0');
-            return '<div class="metric-group"><div class="metric-title">Structure</div>' + h + '</div>';
-        }
-        function sparklineBlock(label, curve, color) {
-            if (!Array.isArray(curve) || curve.length < 2) return '';
-            const n = curve.length;
-            const pts = curve.map((v, i) => (i / (n - 1) * 100).toFixed(2) + ',' + ((1 - Math.min(Math.max(v, 0), 1)) * 24).toFixed(2)).join(' ');
-            let h = '<div style="margin:6px 0 10px 8px;border-left:2px solid rgba(255,255,255,.14);padding-left:12px;">';
-            h += '<div style="font-size:11px;color:#8f8a83;margin-bottom:3px;">' + escapeHtml(label) + '</div>';
-            h += '<svg viewBox="0 0 100 24" preserveAspectRatio="none" style="width:100%;height:40px;display:block;">';
-            h += '<polygon points="0,24 ' + pts + ' 100,24" fill="' + color + '" opacity="0.15"/>';
-            h += '<polyline points="' + pts + '" fill="none" stroke="' + color + '" stroke-width="1.2" vector-effect="non-scaling-stroke"/>';
-            h += '</svg></div>';
-            return h;
-        }
-        function fmtTime(sec) {
-            const m = Math.floor(sec / 60), s = Math.round(sec % 60);
-            return m + ':' + (s < 10 ? '0' : '') + s;
-        }
 
             // Domain scores
             if (ref.domain_scores) {
@@ -202,6 +148,62 @@ function toggleRefPanel() {
             html += '</div>';
             return html;
         }
+
+        function renderStructure(v) {
+            const colors = {intro:'#7aa2f7', verse:'#e5b567', chorus:'#6ee7a0', bridge:'#c792ea', outro:'#8f8a83', section:'#8f8a83', full:'#8f8a83'};
+            let h = '';
+            if (typeof v.hook_score === 'number') {
+                const pct = Math.min(100, Math.max(0, v.hook_score * 10));
+                const color = pct >= 70 ? '#6ee7a0' : pct >= 40 ? '#e5b567' : '#f0615f';
+                h += '<div class="metric-row"><span class="metric-label">hook score</span>';
+                h += '<div class="metric-bar-bg"><div class="metric-bar" style="width:' + pct + '%;background:' + color + '"></div></div>';
+                h += '<span class="metric-val" style="color:' + color + '">' + v.hook_score + '</span></div>';
+            }
+            if (v.hook_details && typeof v.hook_details === 'object') {
+                const d = v.hook_details;
+                h += '<div style="margin:4px 0 10px 8px;font-size:11px;color:#8f8a83">';
+                h += '<span>хорус ×' + (d.chorus_recurrence || 0) + '</span> · ';
+                h += '<span>повторяемость ' + Math.round((d.repetition_ratio || 0) * 100) + '%</span> · ';
+                h += '<span>отличимость ' + Math.round((d.distinctiveness || 0) * 100) + '%</span></div>';
+            }
+            const secs = Array.isArray(v.sections) ? v.sections : [];
+            if (secs.length > 0) {
+                const total = Math.max(secs[secs.length - 1].end - secs[0].start, 0.01);
+                h += '<div style="display:flex;height:22px;border-radius:4px;overflow:hidden;margin:6px 0 4px 8px;">';
+                for (const s of secs) {
+                    const w = Math.max((s.end - s.start) / total * 100, 1);
+                    const c = colors[s.label] || '#8f8a83';
+                    h += '<div title="' + escapeHtml(s.label) + ' ' + fmtTime(s.start) + '–' + fmtTime(s.end) + '" style="width:' + w + '%;background:' + c + ';opacity:.75;border-right:1px solid #0b0b10;"></div>';
+                }
+                h += '</div>';
+                const present = [...new Set(secs.map(s => s.label))];
+                h += '<div style="margin:0 0 12px 8px;display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:#8f8a83">';
+                for (const lab of present) {
+                    h += '<span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + (colors[lab] || '#8f8a83') + ';margin-right:4px;"></span>' + escapeHtml(lab) + '</span>';
+                }
+                h += '</div>';
+            }
+            h += sparklineBlock('retention curve', v.retention_curve, '#7aa2f7');
+            h += sparklineBlock('energy envelope', v.energy_envelope, '#6ee7a0');
+            return '<div class="metric-group"><div class="metric-title">Structure</div>' + h + '</div>';
+        }
+        function sparklineBlock(label, curve, color) {
+            if (!Array.isArray(curve) || curve.length < 2) return '';
+            const n = curve.length;
+            const pts = curve.map((v, i) => (i / (n - 1) * 100).toFixed(2) + ',' + ((1 - Math.min(Math.max(v, 0), 1)) * 24).toFixed(2)).join(' ');
+            let h = '<div style="margin:6px 0 10px 8px;border-left:2px solid rgba(255,255,255,.14);padding-left:12px;">';
+            h += '<div style="font-size:11px;color:#8f8a83;margin-bottom:3px;">' + escapeHtml(label) + '</div>';
+            h += '<svg viewBox="0 0 100 24" preserveAspectRatio="none" style="width:100%;height:40px;display:block;">';
+            h += '<polygon points="0,24 ' + pts + ' 100,24" fill="' + color + '" opacity="0.15"/>';
+            h += '<polyline points="' + pts + '" fill="none" stroke="' + color + '" stroke-width="1.2" vector-effect="non-scaling-stroke"/>';
+            h += '</svg></div>';
+            return h;
+        }
+        function fmtTime(sec) {
+            const m = Math.floor(sec / 60), s = Math.round(sec % 60);
+            return m + ':' + (s < 10 ? '0' : '') + s;
+        }
+
         function renderRecommendations(recs) {
             let html = '<div style="margin:6px 0 10px 8px;border-left:2px solid rgba(255,255,255,.14);padding-left:12px;">';
             for (const r of recs) {
