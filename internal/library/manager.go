@@ -65,6 +65,9 @@ type SyncStatus struct {
 	FinishedAt time.Time
 	ErrMsg     string
 	Stopped    bool
+	// LastError holds the most recent per-track (download) failure reason.
+	// Unlike ErrMsg it is not fatal — the sync keeps going.
+	LastError string
 	// WaitingAuth is set while a sync is paused waiting for a fresh Suno
 	// session cookie (the previous one expired mid-run).
 	WaitingAuth bool
@@ -403,6 +406,13 @@ func (m *Manager) syncOnce(opts *models.SyncOptions) (*models.SyncStats, error) 
 				err := m.downloadTrack(track, audioPath)
 				if err != nil {
 					stats.Errors++
+					log.Printf("[sync] download failed %s (%s): %v", track.ID, track.Title, err)
+					m.updateSync(func(s *SyncStatus) {
+						s.LastError = fmt.Sprintf("%s — %v", track.Title, err)
+					})
+					// Back off a little: bursts of failed downloads usually
+					// mean CDN rate limiting, hammering only makes it worse.
+					time.Sleep(2 * time.Second)
 				} else {
 					stats.Downloaded++
 					track.IsDownloaded = true
@@ -413,6 +423,8 @@ func (m *Manager) syncOnce(opts *models.SyncOptions) (*models.SyncStats, error) 
 					if hash, err := fileHash(audioPath); err == nil {
 						track.AudioHash = hash
 					}
+					// Be gentle with the CDN between consecutive downloads.
+					time.Sleep(300 * time.Millisecond)
 				}
 			} else {
 				track.IsDownloaded = true

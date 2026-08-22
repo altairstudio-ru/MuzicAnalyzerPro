@@ -102,6 +102,7 @@
         <div id="sync-status-line" class="sync-line"><span class="spinner"></span>Ожидание запуска…</div>
         <div id="sync-counters" class="sync-counters">Обработано: 0 · Новых: 0 · Скачано: 0 · Ошибок: 0</div>
         <div id="sync-track" class="sync-track">&nbsp;</div>
+        <div id="sync-error-line" class="sync-track" style="color:#f0615f;display:none;"></div>
         <div class="modal-actions">
             <button id="sync-stop-btn" class="btn btn-danger" onclick="stopSync()">⏹ Остановить</button>
             <button class="btn" onclick="hideSyncModal()">В фоне</button>
@@ -143,6 +144,15 @@
         }
         counters.textContent = syncCountersText(st);
         track.textContent = st.last_track ? 'Сейчас: ' + st.last_track : ' ';
+        const errLine = document.getElementById('sync-error-line');
+        if (errLine) {
+            if (st.last_error) {
+                errLine.textContent = '⚠ Последняя ошибка: ' + st.last_error;
+                errLine.style.display = '';
+            } else {
+                errLine.style.display = 'none';
+            }
+        }
     }
     async function pollSyncStatus() {
         let response;

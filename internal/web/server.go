@@ -367,6 +367,7 @@ func (s *Server) syncStatusHandler(w http.ResponseWriter, r *http.Request) {
 		"started_at":   st.StartedAt,
 		"finished_at":  st.FinishedAt,
 		"error":        st.ErrMsg,
+		"last_error":   st.LastError,
 		"stopped":      st.Stopped,
 		"waiting_auth": st.WaitingAuth,
 	})
