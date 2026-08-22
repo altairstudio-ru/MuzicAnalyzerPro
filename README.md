@@ -4,10 +4,17 @@ CLI + Web UI + Chrome Extension for archiving and analyzing Suno AI music tracks
 
 ## Features
 
-- **Archive** — download Suno tracks with metadata (prompts, lyrics, tags)
-- **Analyze** — 9 metric groups powered by Python audio engine
+- **Archive** — download Suno tracks with metadata (prompts, lyrics, tags),
+  full or selective sync (`--limit`, `--workspace`, interactive TUI picker)
+- **Analyze** — 10 metric groups powered by Python audio engine
+- **Structure** — section detection (intro/verse/chorus/bridge/outro), hook
+  strength score, retention curve and energy envelope with inline charts
 - **Reference Match** — compare any track against a reference (another Suno track or uploaded audio) across 4 domains: atmosphere, mix, energy, stereo
-- **Visualize** — web UI with HTMX, dark theme, audio player, comparison charts
+- **Search** — full-text search over titles, prompts and lyrics (SQLite FTS5,
+  Cyrillic-friendly prefix matching)
+- **Curate** — albums/compilations, labels, variant groups, bulk actions
+  (select tracks → analyze / add to album / label)
+- **Visualize** — web UI with HTMX, dark theme, global audio player, comparison charts
 - **Recommend** — AI-powered improvement suggestions
 - **Extend** — Chrome extension for one-click auth token extraction
 - **Link** — Obsidian notes embed a playable audio link (`![[…mp3]]`) and the
@@ -21,11 +28,14 @@ CLI + Web UI + Chrome Extension for archiving and analyzing Suno AI music tracks
 │  cmd/suno-archiver/    — cobra CLI              │
 │  internal/                                     │
 │    library/            — config, orchestration   │
-│    db/                 — SQLite (tracks,         │
-│                           workspaces, analysis)  │
+│    db/                 — SQLite (tracks, FTS5    │
+│                           index, workspaces,     │
+│                           analysis, catalog)     │
 │    suno/               — Suno API v3 client     │
 │    analyzer/           — Python subprocess       │
 │                           orchestrator           │
+│    tui/                — bubbletea interactive   │
+│                           sync picker            │
 │    web/                — Chi router + HTMX       │
 │                          templates               │
 ├─────────────────────────────────────────────────┤
@@ -38,6 +48,8 @@ CLI + Web UI + Chrome Extension for archiving and analyzing Suno AI music tracks
 │      phase.py           — Correlation, Mono     │
 │      temporal.py        — BPM, Key, Transients  │
 │      spectral.py        — Masking, Conflicts    │
+│      structure.py       — Sections, hook score,  │
+│                          retention/energy curves │
 │      translation.py     — 7 device profiles     │
 │      reference.py       — Spectral/stereo/       │
 │                          dynamics comparison     │
@@ -82,10 +94,17 @@ Full web UI guide (pages, buttons, routes, troubleshooting):
 |---------|-------------|
 | `auth <token>` | Save Suno Clerk JWT |
 | `sync` | Fetch all tracks, download audio |
-| `serve` | Start web UI (default :8080) |
+| `sync --limit N` / `--newest N` | Only sync the N newest tracks |
+| `sync --workspace NAME` | Only sync tracks from the given workspace |
+| `sync --interactive` | Pick tracks in a TUI (space/a/n, enter) and sync the selection |
+| `sync --rename-files` | Also rename/move files when title/workspace changed in Suno |
+| `serve [-p :8080]` | Start web UI (default :8080) |
+| `import [--dir DIR]` | Register existing audio files into the library |
+| `fix-lyrics` | Repair lyrics storage inconsistencies |
+| `retry-downloads` | Retry failed audio downloads |
+| `export-notes [--vault DIR]` | Export library as Obsidian notes |
 | `version` | Show version |
 | `--path` | Custom library path (default `~/.muzicanalyzer`) |
-| `--port` | Custom web port (default `:8080`) |
 
 ## Analysis Metrics
 
@@ -98,6 +117,7 @@ Full web UI guide (pages, buttons, routes, troubleshooting):
 | **Temporal** | `librosa` | BPM, Key Detection, Drum Punch, Vocal Attack, Limiter Damage, Micro-dynamics |
 | **Spectral** | `librosa` | Spectral Balance, Band Energy Distribution, Frequency Conflict Detection (5 zones) |
 | **Translation** | `librosa` | 7 device simulations: iPhone, Samsung, AirPods, Car Audio, Bluetooth Speaker, Laptop, Club System |
+| **Structure** | `librosa` | Section detection (intro/verse/chorus/bridge/outro), hook strength score (chorus recurrence × repetition × distinctiveness), retention curve, energy envelope |
 | **Reference Match** | `librosa` | Compare against reference: spectral (EQ) similarity, stereo image, dynamic envelope, loudness difference; 4 domain scores (atmosphere, mix, energy, stereo); visual comparison chart |
 | **Streaming** | `pyloudnorm` | Spotify, Apple Music, YouTube Music, Amazon Music, Tidal readiness with loudness penalty |
 
@@ -140,7 +160,8 @@ make build VERSION=1.0.0
 **Go (module: `github.com/altairstudio-ru/MuzicAnalyzerPro`)**
 - `go-chi/chi/v5` — HTTP router
 - `spf13/cobra` — CLI framework
-- `modernc.org/sqlite` — Pure Go SQLite (no CGO)
+- `modernc.org/sqlite` — Pure Go SQLite (no CGO, FTS5 included)
+- `charmbracelet/bubbletea` + `lipgloss` — interactive sync TUI
 - `gopkg.in/yaml.v3` — YAML config
 
 **Python (via `analyzer/requirements.txt`)**
@@ -161,9 +182,10 @@ make build VERSION=1.0.0
 ├── internal/
 │   ├── analyzer/           # Go → Python orchestrator
 │   ├── cli/                # (reserved)
-│   ├── db/                 # SQLite CRUD
+│   ├── db/                 # SQLite CRUD + FTS5 index
 │   ├── library/            # Config + Manager
 │   ├── suno/               # Suno API client
+│   ├── tui/                # Interactive sync picker (bubbletea)
 │   └── web/                # Web server + templates
 ├── pkg/models/             # Data models
 ├── bin/                    # Compiled binary (gitignored)
